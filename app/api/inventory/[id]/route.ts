@@ -26,6 +26,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
     "name",
     "color_hex",
     "is_assorted",
+    "is_lettered",
     "stock",
     "quantity",
     "low_stock_threshold",

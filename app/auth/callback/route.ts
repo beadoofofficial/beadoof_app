@@ -1,0 +1,28 @@
+import { NextResponse, type NextRequest } from "next/server";
+import { cookies } from "next/headers";
+import { createClient } from "@/utils/supabase/server";
+
+// Supabase magic-link redirect target. The link Supabase mails out contains
+// either ?code=... (PKCE) or a #-fragment token. The code variant lands here;
+// we exchange it for a session cookie, then redirect to `next` (or "/").
+export async function GET(request: NextRequest) {
+  const url = new URL(request.url);
+  const code = url.searchParams.get("code");
+  const next = url.searchParams.get("next") ?? "/";
+
+  if (!code) {
+    const err = new URL("/sign-in", url.origin);
+    err.searchParams.set("error", "missing_code");
+    return NextResponse.redirect(err);
+  }
+
+  const supabase = createClient(await cookies());
+  const { error } = await supabase.auth.exchangeCodeForSession(code);
+  if (error) {
+    const err = new URL("/sign-in", url.origin);
+    err.searchParams.set("error", error.message);
+    return NextResponse.redirect(err);
+  }
+
+  return NextResponse.redirect(new URL(next, url.origin));
+}

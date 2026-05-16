@@ -31,6 +31,7 @@ export async function POST(req: Request) {
     barcode: body.barcode.trim(),
     name: body.name.trim(),
     is_assorted: isAssorted,
+    is_lettered: body.is_lettered ?? false,
     color_hex: isAssorted ? null : (body.color_hex ?? null),
     stock: body.stock ?? "in",
     quantity: body.quantity ?? 1,

@@ -6,6 +6,7 @@ export type InventoryItem = {
   name: string;
   color_hex: string | null;
   is_assorted: boolean;
+  is_lettered: boolean;
   stock: StockStatus;
   quantity: number;
   low_stock_threshold: number;
@@ -22,6 +23,7 @@ export type InventoryDraft = {
   name: string;
   color_hex?: string | null;
   is_assorted?: boolean;
+  is_lettered?: boolean;
   stock?: StockStatus;
   quantity?: number;
   low_stock_threshold?: number;

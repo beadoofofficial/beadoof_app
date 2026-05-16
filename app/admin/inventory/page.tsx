@@ -16,6 +16,7 @@ type DraftForm = {
   name: string;
   color_hex: string;
   is_assorted: boolean;
+  is_lettered: boolean;
   stock: StockStatus;
   quantity: number;
   low_stock_threshold: number;
@@ -29,6 +30,7 @@ const blankDraft = (barcode = ""): DraftForm => ({
   name: "",
   color_hex: "#e3a235",
   is_assorted: false,
+  is_lettered: false,
   stock: "in",
   quantity: 1,
   low_stock_threshold: 5,
@@ -42,6 +44,7 @@ const itemToDraft = (it: InventoryItem): DraftForm => ({
   name: it.name,
   color_hex: it.color_hex || "#e3a235",
   is_assorted: it.is_assorted,
+  is_lettered: it.is_lettered ?? false,
   stock: it.stock,
   quantity: it.quantity,
   low_stock_threshold: it.low_stock_threshold ?? 5,
@@ -129,6 +132,7 @@ export default function InventoryAdminPage() {
         barcode: draft.barcode,
         name: draft.name,
         is_assorted: draft.is_assorted,
+        is_lettered: draft.is_lettered,
         color_hex: draft.is_assorted ? null : draft.color_hex || null,
         stock: draft.stock,
         quantity: draft.quantity,
@@ -320,6 +324,26 @@ export default function InventoryAdminPage() {
                   />
                   <span className="font-medium">Assorted (mixed colors)</span>
                 </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer select-none py-1">
+                  <input
+                    type="checkbox"
+                    checked={draft.is_lettered}
+                    onChange={(e) =>
+                      setDraft({ ...draft, is_lettered: e.target.checked })
+                    }
+                    className="w-4 h-4"
+                  />
+                  <span
+                    className="w-5 h-5 rounded-full border border-black/10 flex items-center justify-center text-[10px] font-bold text-white"
+                    style={{ background: draft.color_hex || "#5a3a24" }}
+                    aria-hidden
+                  >
+                    A
+                  </span>
+                  <span className="font-medium">
+                    Lettered pack (A–Z alphabet beads)
+                  </span>
+                </label>
                 <div className="grid grid-cols-2 gap-2">
                   {draft.is_assorted ? (
                     <Field label="Color">
@@ -486,6 +510,7 @@ export default function InventoryAdminPage() {
                         <div className="text-[11px] text-[#7a6a60] truncate">
                           {it.barcode} · {it.size_mm ?? 8}mm
                           {it.is_assorted ? " · Assorted" : ""}
+                          {it.is_lettered ? " · Lettered" : ""}
                           {it.stock === "glitter" ? " · Glitter" : ""}
                         </div>
                         <div className={`text-[11px] font-semibold ${levelClass}`}>

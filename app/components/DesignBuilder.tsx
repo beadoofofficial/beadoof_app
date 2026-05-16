@@ -5,12 +5,15 @@ import { useEffect, useMemo, useState } from "react";
 import type { StockStatus } from "@/lib/inventory";
 import { IconBox, IconHeart, IconRefresh, IconX, IconZoomIn } from "./icons";
 import { useActiveItem } from "./ActiveItemProvider";
+import OrderForm from "./OrderForm";
 
 export type Bead = {
   color: string;
   stock: StockStatus;
   name?: string;
   assorted?: boolean;
+  lettered?: boolean;
+  letter?: string;
   quantity?: number;
   lowThreshold?: number;
   sizeMm?: number;
@@ -86,16 +89,29 @@ function DonutBead({
             "inset 0 -4px 6px rgba(0,0,0,0.18), inset 0 3px 5px rgba(255,255,255,0.25), 0 1px 2px rgba(0,0,0,0.08)",
         }}
       />
+      {bead.letter && (
+        <span
+          className="absolute inset-0 flex items-center justify-center font-extrabold text-white select-none pointer-events-none uppercase"
+          style={{
+            fontSize: fluid ? "55%" : size === "lg" ? "1.25rem" : "1rem",
+            textShadow: "0 1px 1px rgba(0,0,0,0.45), 0 0 2px rgba(0,0,0,0.35)",
+          }}
+        >
+          {bead.letter}
+        </span>
+      )}
     </div>
   );
 }
 
 function BraceletRing({
   design,
-  onRemove,
+  selectedIndex,
+  onSelect,
 }: {
   design: Bead[];
-  onRemove: (i: number) => void;
+  selectedIndex: number | null;
+  onSelect: (i: number | null) => void;
 }) {
   const count = design.length;
   // Fixed angular step until the ring closes — beads pack adjacent starting
@@ -103,11 +119,18 @@ function BraceletRing({
   // ring stays a complete circle.
   const ringSize = Math.max(RING_CAPACITY, count + 1);
   const step = 360 / ringSize;
-  const angleAt = (i: number) => -90 + i * step;
-  const nextAngle = count < MAX_BEADS ? angleAt(count) : null;
+  // Beads grow counter-clockwise from the top: the newest bead sits just to
+  // the left of the silhouette, with older beads further around the ring.
+  // design[count - 1] = newest, design[0] = oldest. The silhouette itself
+  // stays anchored at the top.
+  const angleAt = (i: number) => -90 - (count - i) * step;
+  const nextAngle = count < MAX_BEADS ? -90 : null;
 
   return (
-    <div className="relative w-full max-w-70 aspect-square mx-auto">
+    <div
+      className="relative w-full max-w-70 aspect-square mx-auto"
+      onClick={() => onSelect(null)}
+    >
       {/* Empty-ring ghost: faint dashed circles around the perimeter so the
           shape of the bracelet is visible before anything is placed. */}
       {count === 0 &&
@@ -130,14 +153,23 @@ function BraceletRing({
       {/* Placed beads */}
       {design.map((bead, i) => {
         const angle = angleAt(i);
+        const isSelected = i === selectedIndex;
         return (
           <button
             key={i}
             type="button"
-            onClick={() => onRemove(i)}
-            aria-label={`Remove ${bead.name ?? "bead"} at position ${i + 1}`}
-            title="Tap to remove"
-            className="absolute w-[14%] aspect-square group cursor-pointer"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect(isSelected ? null : i);
+            }}
+            aria-label={`Select ${bead.name ?? "bead"} at position ${i + 1}`}
+            aria-pressed={isSelected}
+            title="Tap to select"
+            className={`absolute w-[14%] aspect-square rounded-full transition-[left,top,transform] duration-200 ease-out cursor-pointer ${
+              isSelected
+                ? "ring-3 ring-[#5a3a24] ring-offset-2 ring-offset-white z-20 scale-110"
+                : "hover:scale-105 active:scale-95 z-0"
+            }`}
             style={{
               left: `calc(50% + 40% * cos(${angle}deg))`,
               top: `calc(50% + 40% * sin(${angle}deg))`,
@@ -145,9 +177,6 @@ function BraceletRing({
             }}
           >
             <DonutBead bead={bead} fluid />
-            <span className="absolute inset-0 rounded-full bg-black/0 group-hover:bg-black/30 group-active:bg-black/40 transition-colors flex items-center justify-center text-white opacity-0 group-hover:opacity-100 group-active:opacity-100">
-              <IconX className="w-1/2 h-1/2 drop-shadow" />
-            </span>
           </button>
         );
       })}
@@ -177,6 +206,21 @@ function BraceletRing({
           priority
         />
       </div>
+
+      {/* Horizontal "flip line": beads above use the default ←/→ mapping,
+          beads below use the swapped mapping. */}
+      <div
+        className="absolute left-[3%] right-[3%] top-1/2 -translate-y-1/2 pointer-events-none flex items-center gap-1"
+        aria-hidden
+      >
+        <span className="text-[9px] font-semibold uppercase tracking-wider text-[#b58f6a] bg-white/70 px-1 rounded">
+          ⇄
+        </span>
+        <div className="flex-1 border-t border-dashed border-[#c2a48a]/60" />
+        <span className="text-[9px] font-semibold uppercase tracking-wider text-[#b58f6a] bg-white/70 px-1 rounded">
+          ⇄
+        </span>
+      </div>
     </div>
   );
 }
@@ -185,6 +229,14 @@ export default function DesignBuilder({ beads }: { beads: Bead[] }) {
   const { targetLengthIn, activeItemId } = useActiveItem();
   const [design, setDesign] = useState<Bead[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const [letterPackIdx, setLetterPackIdx] = useState(0);
+  const [letterText, setLetterText] = useState("");
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [orderOpen, setOrderOpen] = useState(false);
+
+  const letterPacks = useMemo(() => beads.filter((b) => b.lettered), [beads]);
+  const paletteBeads = useMemo(() => beads.filter((b) => !b.lettered), [beads]);
+  const selectedPack: Bead | undefined = letterPacks[letterPackIdx];
 
   useEffect(() => {
     try {
@@ -234,9 +286,7 @@ export default function DesignBuilder({ beads }: { beads: Bead[] }) {
   const lengthIn = lengthInValue.toFixed(1);
   const targetMm = targetLengthIn * MM_PER_INCH;
   const percent =
-    targetMm > 0
-      ? Math.max(0, Math.min(100, (totalMm / targetMm) * 100))
-      : 0;
+    targetMm > 0 ? Math.max(0, Math.min(100, (totalMm / targetMm) * 100)) : 0;
   const overTarget = totalMm > targetMm;
   const nearTarget = !overTarget && percent >= 90;
   const overByIn = overTarget ? (totalMm - targetMm) / MM_PER_INCH : 0;
@@ -246,13 +296,47 @@ export default function DesignBuilder({ beads }: { beads: Bead[] }) {
     setDesign((d) => (d.length < MAX_BEADS ? [...d, b] : d));
   };
 
-  const removeBead = (i: number) =>
+  const addLetters = () => {
+    if (!selectedPack) return;
+    if (beadLevel(selectedPack) === "out") return;
+    const chars = letterText
+      .toUpperCase()
+      .split("")
+      .filter((c) => /[A-Z0-9]/.test(c));
+    if (chars.length === 0) return;
+    setDesign((d) => {
+      const room = MAX_BEADS - d.length;
+      const toAdd = chars.slice(0, Math.max(0, room));
+      return [...d, ...toAdd.map((letter) => ({ ...selectedPack, letter }))];
+    });
+    setLetterText("");
+  };
+
+  const removeBeadAt = (i: number) => {
     setDesign((d) => d.filter((_, idx) => idx !== i));
+    setSelectedIndex(null);
+  };
+
+  const moveBead = (from: number, direction: -1 | 1) => {
+    const to = from + direction;
+    setDesign((d) => {
+      if (to < 0 || to >= d.length) return d;
+      const next = [...d];
+      [next[from], next[to]] = [next[to], next[from]];
+      return next;
+    });
+    setSelectedIndex((cur) => {
+      if (cur !== from) return cur;
+      if (to < 0 || to >= design.length) return cur;
+      return to;
+    });
+  };
 
   const clear = () => {
     if (design.length === 0) return;
     if (!window.confirm("Clear your current design?")) return;
     setDesign([]);
+    setSelectedIndex(null);
   };
 
   const randomFill = () => {
@@ -289,13 +373,91 @@ export default function DesignBuilder({ beads }: { beads: Bead[] }) {
           </button>
         </div>
 
-        <BraceletRing design={design} onRemove={removeBead} />
+        <BraceletRing
+          design={design}
+          selectedIndex={selectedIndex}
+          onSelect={setSelectedIndex}
+        />
 
         {design.length === 0 && (
           <div className="text-center text-xs text-[#9a8478] italic mt-3 px-3">
             Tap a bead below to start building your bracelet
           </div>
         )}
+
+        {selectedIndex !== null &&
+          design[selectedIndex] &&
+          (() => {
+            // Map the ← / → buttons to whichever array direction actually
+            // moves the bead leftward / rightward in screen space. CCW (array
+            // -1) moves the bead with screen-x velocity proportional to
+            // sin(θ): positive sin = CCW visually moves RIGHT (bead is in the
+            // lower half), so the buttons need to swap.
+            const ringSize = Math.max(RING_CAPACITY, design.length + 1);
+            const step = 360 / ringSize;
+            const angle = -90 - (design.length - selectedIndex) * step;
+            const sinTheta = Math.sin((angle * Math.PI) / 180);
+            const leftDir: -1 | 1 = sinTheta > 0 ? 1 : -1;
+            const rightDir: -1 | 1 = (-leftDir) as -1 | 1;
+            const leftTarget = selectedIndex + leftDir;
+            const rightTarget = selectedIndex + rightDir;
+            const leftDisabled =
+              leftTarget < 0 || leftTarget >= design.length;
+            const rightDisabled =
+              rightTarget < 0 || rightTarget >= design.length;
+            const swapped = sinTheta > 0;
+            return (
+              <div
+                className="mt-3 space-y-1"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="text-[10px] text-[#a07258] text-center italic">
+                  {swapped
+                    ? "Below the ⇄ line — ← / → are flipped to match screen direction"
+                    : "Above the ⇄ line — ← moves left, → moves right"}
+                </div>
+                <div className="flex items-center justify-between gap-2 p-2 rounded-xl border border-[#e4d3c4] bg-[#fbf6ef]">
+                <button
+                  type="button"
+                  onClick={() => moveBead(selectedIndex, leftDir)}
+                  disabled={leftDisabled}
+                  aria-label="Move bead left"
+                  title="Move left"
+                  className="flex items-center gap-1 text-xs md:text-sm font-semibold px-3 py-1.5 rounded-lg bg-white border border-[#e4d3c4] text-[#5a3a24] disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <span aria-hidden>←</span> Move
+                </button>
+                <button
+                  type="button"
+                  onClick={() => removeBeadAt(selectedIndex)}
+                  aria-label="Remove selected bead"
+                  title="Remove bead"
+                  className="flex items-center gap-1 text-xs md:text-sm font-semibold px-3 py-1.5 rounded-lg bg-red-50 text-red-700 border border-red-200"
+                >
+                  <IconX className="w-3 h-3" /> Remove
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveBead(selectedIndex, rightDir)}
+                  disabled={rightDisabled}
+                  aria-label="Move bead right"
+                  title="Move right"
+                  className="flex items-center gap-1 text-xs md:text-sm font-semibold px-3 py-1.5 rounded-lg bg-white border border-[#e4d3c4] text-[#5a3a24] disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  Move <span aria-hidden>→</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedIndex(null)}
+                  aria-label="Deselect bead"
+                  className="text-xs text-[#7a6a60] underline px-2"
+                >
+                  Done
+                </button>
+                </div>
+              </div>
+            );
+          })()}
 
         <div className="mt-3 space-y-2 text-[#7a6a60]">
           <div className="flex items-center justify-between gap-2">
@@ -322,7 +484,10 @@ export default function DesignBuilder({ beads }: { beads: Bead[] }) {
               >
                 {lengthIn}
               </span>
-              <span className="text-[#9a8478]"> / {targetLengthIn.toFixed(1)} in</span>
+              <span className="text-[#9a8478]">
+                {" "}
+                / {targetLengthIn.toFixed(1)} in
+              </span>
             </span>
             <button
               type="button"
@@ -359,8 +524,28 @@ export default function DesignBuilder({ beads }: { beads: Bead[] }) {
               </span>
             )}
           </div>
+
+          <button
+            type="button"
+            onClick={() => setOrderOpen(true)}
+            disabled={design.length === 0}
+            className="mt-2 w-full bg-[#5a3a24] text-white py-2.5 rounded-xl font-semibold shadow-sm disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#3e2a18] transition-colors"
+          >
+            Send order
+          </button>
         </div>
       </div>
+
+      {orderOpen && (
+        <OrderForm
+          design={design}
+          onClose={() => setOrderOpen(false)}
+          onSent={() => {
+            setDesign([]);
+            setSelectedIndex(null);
+          }}
+        />
+      )}
 
       {/* Bead Colors / palette card */}
       <div className="bg-white rounded-2xl shadow-sm p-4 md:p-5">
@@ -389,7 +574,7 @@ export default function DesignBuilder({ beads }: { beads: Bead[] }) {
         </div>
 
         <div className="grid grid-cols-5 gap-x-3 gap-y-3 md:gap-x-4 md:gap-y-4 justify-items-center">
-          {beads.map((b, i) => {
+          {paletteBeads.map((b, i) => {
             const level = beadLevel(b);
             const disabled = level === "out" || atMax;
             const dotClass =
@@ -434,11 +619,86 @@ export default function DesignBuilder({ beads }: { beads: Bead[] }) {
           })}
         </div>
 
+        {letterPacks.length > 0 && (
+          <div className="mt-5 pt-4 border-t border-[#f1e4d5]">
+            <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+              <h4 className="text-base md:text-lg font-bold flex items-center gap-2">
+                <span
+                  className="inline-flex w-6 h-6 rounded-full items-center justify-center text-xs font-extrabold text-white shadow-[inset_0_-2px_3px_rgba(0,0,0,0.2)]"
+                  style={{
+                    background: selectedPack
+                      ? selectedPack.assorted
+                        ? ASSORTED_SWIRL
+                        : selectedPack.color
+                      : "#5a3a24",
+                    textShadow: "0 1px 1px rgba(0,0,0,0.45)",
+                  }}
+                  aria-hidden
+                >
+                  A
+                </span>
+                Letter beads
+              </h4>
+              <select
+                value={letterPackIdx}
+                onChange={(e) => setLetterPackIdx(Number(e.target.value))}
+                aria-label="Letter pack"
+                className="flex-1 min-w-0 max-w-[60%] text-xs bg-white border border-[#e4d3c4] rounded-lg px-2 py-1.5 truncate"
+              >
+                {letterPacks.map((p, idx) => (
+                  <option key={idx} value={idx}>
+                    {p.name ?? `Pack ${idx + 1}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={letterText}
+                onChange={(e) =>
+                  setLetterText(e.target.value.slice(0, MAX_BEADS))
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addLetters();
+                  }
+                }}
+                placeholder="Type letters (e.g. MAYA)"
+                maxLength={MAX_BEADS}
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                className="flex-1 min-w-0 text-sm font-semibold border border-[#e4d3c4] rounded-lg px-3 py-2 uppercase tracking-wider"
+              />
+              <button
+                type="button"
+                onClick={addLetters}
+                disabled={
+                  !selectedPack ||
+                  beadLevel(selectedPack) === "out" ||
+                  letterText.trim().length === 0 ||
+                  atMax
+                }
+                className="text-sm font-semibold px-4 rounded-lg bg-[#5a3a24] text-white disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Add
+              </button>
+            </div>
+            {selectedPack && beadLevel(selectedPack) === "out" && (
+              <div className="mt-2 text-[11px] text-red-600">
+                Selected pack is out of stock.
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="mt-4 p-3 bg-[#fbf1ea] rounded-xl text-[11px] md:text-xs text-[#7a5a44] flex items-center gap-2">
           <IconBox className="w-5 h-5 text-[#a07258] shrink-0" />
           <span className="flex-1">
-            Tap a bead to add it. Tap a bead in your design to remove. Up to{" "}
-            {MAX_BEADS} beads.
+            Tap a bead below to add it. Tap a bead in your design to select —
+            then move it left/right or remove it. Up to {MAX_BEADS} beads.
           </span>
           <div className="relative w-8 h-8 shrink-0">
             <Image

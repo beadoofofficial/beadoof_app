@@ -5,6 +5,7 @@ import DesignBuilder, { type Bead } from "./components/DesignBuilder";
 import { ActiveItemProvider } from "./components/ActiveItemProvider";
 import { IconHeart } from "./components/icons";
 import { getInventory } from "@/lib/inventory.server";
+import { getUser } from "@/lib/auth.server";
 import type { InventoryItem } from "@/lib/inventory";
 
 const ITEMS = [
@@ -23,6 +24,7 @@ function toBead(it: InventoryItem): Bead {
     stock: it.stock,
     name: it.name,
     assorted: it.is_assorted,
+    lettered: it.is_lettered,
     quantity: it.quantity,
     lowThreshold: it.low_stock_threshold,
     sizeMm: it.size_mm,
@@ -110,9 +112,10 @@ function EmptyInventoryCard() {
 }
 
 export default async function Home() {
-  const inventory = await getInventory();
+  const [inventory, user] = await Promise.all([getInventory(), getUser()]);
   const beads: Bead[] = inventory.map(toBead);
   const empty = inventory.length === 0;
+  const greetingName = user?.email ? user.email.split("@")[0] : "Maker";
 
   return (
     <div className="min-h-screen flex flex-col bg-[#faf3ea] font-sans text-foreground overflow-x-clip">
@@ -151,16 +154,25 @@ export default async function Home() {
               className="object-cover"
             />
           </div>
-          <span className="text-[#5a4438] font-medium hidden xs:inline">
-            Hi, Maker!
+          <span className="text-[#5a4438] font-medium hidden xs:inline truncate max-w-[140px]">
+            Hi, {greetingName}!
           </span>
-          <button
-            type="button"
-            aria-label="favorites"
-            className="text-[#9a8478] hover:text-[#c97f9a]"
-          >
-            <IconHeart className="w-5 h-5" />
-          </button>
+          {user ? (
+            <Link
+              href="/profile"
+              aria-label="Open profile"
+              className="text-[#9a8478] hover:text-[#5a3a24]"
+            >
+              <IconHeart className="w-5 h-5" />
+            </Link>
+          ) : (
+            <Link
+              href="/sign-in"
+              className="text-xs font-semibold px-3 py-1.5 rounded-full bg-[#5a3a24] text-white"
+            >
+              Sign in
+            </Link>
+          )}
         </div>
       </header>
 
@@ -227,35 +239,28 @@ export default async function Home() {
       </main>
 
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#efe3d6] z-20">
-        <div className="max-w-6xl mx-auto px-2 py-2 grid grid-cols-4 text-[11px] md:text-xs">
-          <button
-            type="button"
+        <div className="max-w-6xl mx-auto px-2 py-2 grid grid-cols-3 text-[11px] md:text-xs">
+          <Link
+            href="/"
             className="flex flex-col items-center gap-0.5 text-[#5a3a24]"
           >
             <NavIcon kind="home" active />
             <span className="font-semibold">Home</span>
-          </button>
-          <button
-            type="button"
-            className="flex flex-col items-center gap-0.5 text-[#9a8478]"
-          >
-            <NavIcon kind="heart" />
-            <span>My Designs</span>
-          </button>
-          <button
-            type="button"
+          </Link>
+          <Link
+            href="/my-orders"
             className="flex flex-col items-center gap-0.5 text-[#9a8478]"
           >
             <NavIcon kind="bag" />
-            <span>Orders</span>
-          </button>
-          <button
-            type="button"
+            <span>My orders</span>
+          </Link>
+          <Link
+            href="/profile"
             className="flex flex-col items-center gap-0.5 text-[#9a8478]"
           >
             <NavIcon kind="user" />
             <span>Profile</span>
-          </button>
+          </Link>
         </div>
       </nav>
     </div>
