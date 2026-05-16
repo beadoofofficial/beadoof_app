@@ -356,19 +356,21 @@ export default function DesignBuilder({ beads }: { beads: Bead[] }) {
   return (
     <>
       {/* Your Design card */}
-      <div className="bg-white rounded-2xl shadow-sm p-4 md:p-5">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <h2 className="text-base md:text-lg font-bold">Your Design</h2>
-            <IconHeart className="w-4 h-4 text-[#9a8478]" />
+      <div className="bg-white rounded-2xl shadow-sm p-3 md:p-5">
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <h2 className="text-sm md:text-lg font-bold whitespace-nowrap">
+              Your Design
+            </h2>
+            <IconHeart className="w-4 h-4 text-[#9a8478] shrink-0" />
           </div>
           <button
             type="button"
             onClick={clear}
             disabled={design.length === 0}
-            className="inline-flex items-center gap-1.5 text-xs md:text-sm px-3 py-1.5 rounded-full border border-[#e4d3c4] text-[#a07258] hover:bg-[#fbf1ea] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-1.5 text-xs md:text-sm px-2.5 md:px-3 py-1 md:py-1.5 rounded-full border border-[#e4d3c4] text-[#a07258] hover:bg-[#fbf1ea] transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
           >
-            <IconRefresh className="w-3.5 h-3.5" />
+            <IconRefresh className="hidden md:inline-block w-3.5 h-3.5" />
             Clear
           </button>
         </div>
@@ -411,49 +413,55 @@ export default function DesignBuilder({ beads }: { beads: Bead[] }) {
                 className="mt-3 space-y-1"
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="text-[10px] text-[#a07258] text-center italic">
+                <div className="text-[10px] text-[#a07258] text-center italic px-1">
                   {swapped
-                    ? "Below the ⇄ line — ← / → are flipped to match screen direction"
-                    : "Above the ⇄ line — ← moves left, → moves right"}
+                    ? "Below the ⇄ line — ← / → flipped"
+                    : "Above the ⇄ line — ← left, → right"}
                 </div>
-                <div className="flex items-center justify-between gap-2 p-2 rounded-xl border border-[#e4d3c4] bg-[#fbf6ef]">
-                <button
-                  type="button"
-                  onClick={() => moveBead(selectedIndex, leftDir)}
-                  disabled={leftDisabled}
-                  aria-label="Move bead left"
-                  title="Move left"
-                  className="flex items-center gap-1 text-xs md:text-sm font-semibold px-3 py-1.5 rounded-lg bg-white border border-[#e4d3c4] text-[#5a3a24] disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  <span aria-hidden>←</span> Move
-                </button>
-                <button
-                  type="button"
-                  onClick={() => removeBeadAt(selectedIndex)}
-                  aria-label="Remove selected bead"
-                  title="Remove bead"
-                  className="flex items-center gap-1 text-xs md:text-sm font-semibold px-3 py-1.5 rounded-lg bg-red-50 text-red-700 border border-red-200"
-                >
-                  <IconX className="w-3 h-3" /> Remove
-                </button>
-                <button
-                  type="button"
-                  onClick={() => moveBead(selectedIndex, rightDir)}
-                  disabled={rightDisabled}
-                  aria-label="Move bead right"
-                  title="Move right"
-                  className="flex items-center gap-1 text-xs md:text-sm font-semibold px-3 py-1.5 rounded-lg bg-white border border-[#e4d3c4] text-[#5a3a24] disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  Move <span aria-hidden>→</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedIndex(null)}
-                  aria-label="Deselect bead"
-                  className="text-xs text-[#7a6a60] underline px-2"
-                >
-                  Done
-                </button>
+                <div className="flex items-center gap-1.5 md:gap-2 p-1.5 md:p-2 rounded-xl border border-[#e4d3c4] bg-[#fbf6ef]">
+                  <button
+                    type="button"
+                    onClick={() => moveBead(selectedIndex, leftDir)}
+                    disabled={leftDisabled}
+                    aria-label="Move bead left"
+                    title="Move left"
+                    className="flex-1 flex items-center justify-center gap-1 text-[11px] md:text-sm font-semibold px-2 md:px-3 py-1 md:py-1.5 rounded-lg bg-white border border-[#e4d3c4] text-[#5a3a24] disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <span aria-hidden className="text-sm md:text-base">←</span>
+                    <span className="hidden xs:inline md:inline">Move</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeBeadAt(selectedIndex)}
+                    aria-label="Remove selected bead"
+                    title="Remove bead"
+                    className="flex-1 flex items-center justify-center gap-1 text-[11px] md:text-sm font-semibold px-2 md:px-3 py-1 md:py-1.5 rounded-lg bg-red-50 text-red-700 border border-red-200"
+                  >
+                    <IconX className="w-3 h-3" /> Remove
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moveBead(selectedIndex, rightDir)}
+                    disabled={rightDisabled}
+                    aria-label="Move bead right"
+                    title="Move right"
+                    className="flex-1 flex items-center justify-center gap-1 text-[11px] md:text-sm font-semibold px-2 md:px-3 py-1 md:py-1.5 rounded-lg bg-white border border-[#e4d3c4] text-[#5a3a24] disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <span className="hidden xs:inline md:inline">Move</span>
+                    <span aria-hidden className="text-sm md:text-base">→</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedIndex(null)}
+                    aria-label="Deselect bead"
+                    title="Done"
+                    className="shrink-0 w-7 h-7 md:w-auto md:h-auto md:px-2 flex items-center justify-center rounded-lg text-[#7a6a60] hover:text-[#5a3a24] hover:bg-white"
+                  >
+                    <IconX className="w-4 h-4 md:hidden" />
+                    <span className="hidden md:inline text-xs underline">
+                      Done
+                    </span>
+                  </button>
                 </div>
               </div>
             );

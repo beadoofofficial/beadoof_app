@@ -154,7 +154,7 @@ export default async function Home() {
               className="object-cover"
             />
           </div>
-          <span className="text-[#5a4438] font-medium hidden xs:inline truncate max-w-[140px]">
+          <span className="text-[#5a4438] font-medium hidden xs:inline truncate max-w-35">
             Hi, {greetingName}!
           </span>
           {user ? (
@@ -178,63 +178,65 @@ export default async function Home() {
 
       <main className="flex-1 w-full max-w-6xl mx-auto px-3 md:px-6 pb-28">
         <ActiveItemProvider defaultId="bracelet">
-        <div className="grid grid-cols-[112px_minmax(0,1fr)] md:grid-cols-[180px_minmax(0,1fr)] gap-3 md:gap-6">
-          {/* Left column */}
-          <aside className="flex flex-col gap-3 md:gap-4 min-w-0">
-            <div>
-              <div className="text-xs md:text-sm font-semibold text-[#5a4438] mb-2 px-1">
-                Choose Your Item
+          <div className="grid grid-cols-[88px_minmax(0,1fr)] md:grid-cols-[180px_minmax(0,1fr)] gap-2.5 md:gap-6">
+            {/* Left column */}
+            <aside className="flex flex-col gap-2.5 md:gap-4 min-w-0">
+              <div>
+                <div className="text-[10px] md:text-sm font-semibold text-[#5a4438] mb-1.5 md:mb-2 px-1">
+                  Choose Your Item
+                </div>
+                <div className="flex flex-col gap-1.5 md:gap-3">
+                  <ClientItems fallback={ITEMS} />
+                </div>
               </div>
-              <div className="flex flex-col gap-2 md:gap-3">
-                <ClientItems fallback={ITEMS} />
-              </div>
-            </div>
 
-            <div>
-              <div className="text-xs md:text-sm font-semibold text-[#5a4438] mb-2 px-1">
-                Example Designs
+              <div>
+                <div className="text-[10px] md:text-sm font-semibold text-[#5a4438] mb-1.5 md:mb-2 px-1">
+                  Example Designs
+                </div>
+                <div className="flex flex-col gap-1.5 md:gap-3">
+                  {EXAMPLES.map((ex) => (
+                    <div
+                      key={ex.id}
+                      className="aspect-square rounded-2xl bg-white shadow-sm border border-transparent flex items-center justify-center overflow-hidden p-2 md:p-3"
+                    >
+                      <Image
+                        src={ex.img}
+                        alt={ex.id}
+                        width={120}
+                        height={120}
+                        className="object-contain w-3/5 md:w-3/4 h-auto"
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="flex flex-col gap-2 md:gap-3">
-                {EXAMPLES.map((ex) => (
-                  <div
-                    key={ex.id}
-                    className="aspect-square rounded-2xl bg-white shadow-sm border border-transparent flex items-center justify-center overflow-hidden"
-                  >
-                    <Image
-                      src={ex.img}
-                      alt={ex.id}
-                      width={120}
-                      height={120}
-                      className="object-contain p-3"
-                    />
+
+              <div className="flex flex-col items-center gap-1 md:block md:relative md:pt-12">
+                <div className="relative w-12 h-12 md:absolute md:left-0 md:-bottom-2 md:w-20 lg:w-24 md:h-20 lg:h-24 md:z-10">
+                  <Image
+                    src="/logo.png"
+                    alt="helper mascot"
+                    fill
+                    sizes="96px"
+                    className="object-contain"
+                  />
+                </div>
+                <div className="w-full md:ml-18 lg:ml-22 bg-[#8a5a3b] text-white rounded-2xl md:rounded-bl-sm p-2 md:p-3 text-[9px] md:text-xs leading-snug shadow-sm text-center md:text-left">
+                  <div className="font-semibold">Have fun creating!</div>
+                  <div className="mt-0.5 md:mt-1 opacity-90">
+                    You&apos;re doing great!
                   </div>
-                ))}
+                  <IconHeart className="w-2.5 h-2.5 md:w-3 md:h-3 mt-1 text-white/80 mx-auto md:mx-0" />
+                </div>
               </div>
-            </div>
+            </aside>
 
-            <div className="relative pt-12">
-              <div className="absolute left-0 -bottom-2 w-20 h-20 md:w-24 md:h-24 z-10">
-                <Image
-                  src="/logo.png"
-                  alt="helper mascot"
-                  fill
-                  sizes="96px"
-                  className="object-contain"
-                />
-              </div>
-              <div className="ml-10 md:ml-14 bg-[#8a5a3b] text-white rounded-2xl rounded-bl-sm p-3 text-[11px] md:text-xs leading-snug shadow-sm">
-                <div className="font-semibold">Have fun creating!</div>
-                <div className="mt-1 opacity-90">You&apos;re doing great!</div>
-                <IconHeart className="w-3 h-3 mt-1 text-white/80" />
-              </div>
-            </div>
-          </aside>
-
-          {/* Right column: interactive design builder or empty state */}
-          <section className="flex flex-col gap-3 md:gap-4 min-w-0">
-            {empty ? <EmptyInventoryCard /> : <DesignBuilder beads={beads} />}
-          </section>
-        </div>
+            {/* Right column: interactive design builder or empty state */}
+            <section className="flex flex-col gap-3 md:gap-4 min-w-0">
+              {empty ? <EmptyInventoryCard /> : <DesignBuilder beads={beads} />}
+            </section>
+          </div>
         </ActiveItemProvider>
       </main>
 
