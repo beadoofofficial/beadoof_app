@@ -452,9 +452,9 @@ export async function POST(req: Request) {
     },
   ];
 
-  // Persist the order in Supabase first. user_id is linked when signed in,
-  // null for guests. If the DB insert fails we still try to send the email
-  // (so the shop doesn't lose the order) — but we surface the warning.
+  // Persist the order in Supabase. user_id is linked when signed in, null
+  // for guests. If the DB insert fails we still try to send the email so
+  // the shop doesn't lose the order — and we surface the warning.
   const supabase = createClient(await cookies());
   const {
     data: { user },

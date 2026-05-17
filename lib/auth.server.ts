@@ -3,14 +3,14 @@ import { cookies } from "next/headers";
 import { createClient } from "@/utils/supabase/server";
 import type { User } from "@supabase/supabase-js";
 
-/** Get the currently signed-in Supabase user, or null. */
+/** Currently signed-in Supabase user, or null. */
 export async function getUser(): Promise<User | null> {
   const supabase = createClient(await cookies());
   const { data } = await supabase.auth.getUser();
   return data.user ?? null;
 }
 
-/** Comma-separated list of admin emails from ADMIN_EMAILS env var. */
+/** Parse ADMIN_EMAILS env var into a lowercase list. */
 function adminEmails(): string[] {
   return (process.env.ADMIN_EMAILS ?? "")
     .split(",")
@@ -23,8 +23,7 @@ export function isAdminEmail(email: string | null | undefined): boolean {
   return adminEmails().includes(email.toLowerCase());
 }
 
-/** Convenience: is the currently-signed-in user an admin? */
 export async function isCurrentUserAdmin(): Promise<boolean> {
-  const user = await getUser();
-  return isAdminEmail(user?.email);
+  const u = await getUser();
+  return isAdminEmail(u?.email);
 }

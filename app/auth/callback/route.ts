@@ -2,9 +2,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { createClient } from "@/utils/supabase/server";
 
-// Supabase magic-link redirect target. The link Supabase mails out contains
-// either ?code=... (PKCE) or a #-fragment token. The code variant lands here;
-// we exchange it for a session cookie, then redirect to `next` (or "/").
+// Supabase email-confirmation / password-reset redirect target. The link
+// contains ?code=... ; we exchange it for a session cookie and forward to
+// `next` (or "/").
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");

@@ -9,10 +9,7 @@ export default async function ProfilePage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Middleware guarantees user is non-null here, but TS doesn't know that.
-  if (!user) {
-    return null;
-  }
+  if (!user) return null;
 
   const isAdmin = isAdminEmail(user.email);
   const joinedDate = user.created_at
@@ -22,7 +19,6 @@ export default async function ProfilePage() {
     ? new Date(user.last_sign_in_at).toLocaleString()
     : "—";
 
-  // Count of orders is a cheap lookup. RLS guarantees we only see this user's.
   const { count: orderCount } = await supabase
     .from("orders")
     .select("*", { count: "exact", head: true });
@@ -33,7 +29,9 @@ export default async function ProfilePage() {
         <header className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">Your profile</h1>
-            <p className="text-xs text-[#7a6a60]">Signed in via magic link</p>
+            <p className="text-xs text-[#7a6a60]">
+              Signed in with email + password
+            </p>
           </div>
           <Link href="/" className="text-sm text-[#7a6a60] underline">
             ← Home
@@ -90,7 +88,11 @@ export default async function ProfilePage() {
           )}
         </section>
 
-        <form action="/auth/signout" method="post">
+        <form
+          action="/auth/signout"
+          method="post"
+          suppressHydrationWarning
+        >
           <button
             type="submit"
             className="w-full bg-white border border-red-200 text-red-700 py-2.5 rounded-xl font-semibold"

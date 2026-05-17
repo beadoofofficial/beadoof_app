@@ -84,8 +84,7 @@ export default function OrderForm({ design, onClose, onSent }: Props) {
     customerName.trim().length > 0 &&
     emailValid &&
     (deliveryType === "pickup" ||
-      (deliveryAddress.trim().length > 0 &&
-        customerPhone.trim().length > 0));
+      (deliveryAddress.trim().length > 0 && customerPhone.trim().length > 0));
 
   return (
     <div
@@ -101,7 +100,7 @@ export default function OrderForm({ design, onClose, onSent }: Props) {
           <button
             type="button"
             onClick={onClose}
-            className="text-2xl leading-none text-[#7a6a60] hover:text-[#3b2b22] px-2"
+            className="text-2xl leading-none text-[#7a6a60] hover:text-foreground px-2"
             aria-label="Close"
           >
             ×
@@ -126,9 +125,9 @@ export default function OrderForm({ design, onClose, onSent }: Props) {
         ) : (
           <form onSubmit={submit} className="p-4 md:p-5 space-y-3 text-sm">
             <div className="text-xs text-[#7a6a60] bg-[#fbf1ea] rounded-lg p-3">
-              <strong>{totalBeads}</strong> beads · <strong>{totalIn} in</strong>{" "}
-              total. The shop will receive a receipt of materials with your
-              design.
+              <strong>{totalBeads}</strong> beads ·{" "}
+              <strong>{totalIn} in</strong> total. The shop will receive a
+              receipt of materials with your design.
             </div>
 
             <Field label="Your name">
