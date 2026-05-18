@@ -20,6 +20,7 @@ const EXAMPLES = [
 
 function toBead(it: InventoryItem): Bead {
   return {
+    id: it.id,
     color: it.color_hex || "#d9b48a",
     stock: it.stock,
     name: it.name,
@@ -28,6 +29,9 @@ function toBead(it: InventoryItem): Bead {
     quantity: it.quantity,
     lowThreshold: it.low_stock_threshold,
     sizeMm: it.size_mm,
+    imageUrl: it.image_url,
+    maxPerDesign: it.max_per_design,
+    variantColors: it.variant_colors,
   };
 }
 
@@ -112,7 +116,11 @@ function EmptyInventoryCard() {
 }
 
 export default async function Home() {
-  const [inventory, user] = await Promise.all([getInventory(), getUser()]);
+  // Home palette only shows beads — pins/hooks/clasps stay in admin inventory.
+  const [inventory, user] = await Promise.all([
+    getInventory({ category: "bead" }),
+    getUser(),
+  ]);
   const beads: Bead[] = inventory.map(toBead);
   const empty = inventory.length === 0;
   const greetingName = user?.email ? user.email.split("@")[0] : "Maker";

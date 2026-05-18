@@ -30,13 +30,20 @@ export async function POST(req: Request) {
   const row = {
     barcode: body.barcode.trim(),
     name: body.name.trim(),
+    category: body.category ?? "bead",
     is_assorted: isAssorted,
     is_lettered: body.is_lettered ?? false,
+    variant_colors: Array.isArray(body.variant_colors)
+      ? body.variant_colors.filter(
+          (c): c is string => typeof c === "string" && c.length > 0,
+        )
+      : [],
     color_hex: isAssorted ? null : (body.color_hex ?? null),
     stock: body.stock ?? "in",
     quantity: body.quantity ?? 1,
     low_stock_threshold: body.low_stock_threshold ?? 5,
     size_mm: body.size_mm ?? 8,
+    max_per_design: body.max_per_design ?? null,
     price_cents: body.price_cents ?? null,
     image_url: body.image_url ?? null,
     notes: body.notes ?? null,

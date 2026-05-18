@@ -13,7 +13,24 @@ type OrderBead = {
   lettered?: boolean;
   letter?: string;
   sizeMm?: number;
+  imageUrl?: string | null;
+  variantColors?: string[];
 };
+
+const DEFAULT_ASSORTED_COLORS = [
+  "#ff6b6b",
+  "#f7b733",
+  "#52c41a",
+  "#13c2c2",
+  "#1890ff",
+  "#9c27b0",
+];
+
+function assortedColorsFor(b: OrderBead): string[] {
+  return b.variantColors && b.variantColors.length > 0
+    ? b.variantColors
+    : DEFAULT_ASSORTED_COLORS;
+}
 
 type OrderBody = {
   customerName: string;
@@ -31,6 +48,50 @@ function isValidEmail(v: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 }
 
+// Fetch a remote image once, base64-encode it, and return a data URI suitable
+// for inlining into an SVG <image href> or HTML <img src>. Returns null if
+// the fetch fails so callers can fall back to whatever placeholder they want.
+async function fetchImageAsDataUri(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const buf = await res.arrayBuffer();
+    if (buf.byteLength === 0) return null;
+    const contentType = res.headers.get("content-type") ?? "image/jpeg";
+    const base64 = Buffer.from(buf).toString("base64");
+    return `data:${contentType};base64,${base64}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Walks the design, collects unique imageUrls, fetches each one in parallel,
+ * and returns a Map from original URL to inlined data URI. Callers can use
+ * `map.get(originalUrl) ?? originalUrl` to substitute on render — that way a
+ * failed fetch falls back gracefully to the external URL (which some email
+ * clients will still try to load).
+ */
+async function inlineDesignImages(
+  design: OrderBead[],
+): Promise<Map<string, string>> {
+  const unique = Array.from(
+    new Set(
+      design
+        .map((b) => b.imageUrl)
+        .filter((u): u is string => typeof u === "string" && u.length > 0),
+    ),
+  );
+  const entries = await Promise.all(
+    unique.map(async (u) => [u, await fetchImageAsDataUri(u)] as const),
+  );
+  const map = new Map<string, string>();
+  for (const [url, dataUri] of entries) {
+    if (dataUri) map.set(url, dataUri);
+  }
+  return map;
+}
+
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -45,6 +106,11 @@ function beadSwatchStyle(b: OrderBead): string {
     return "background:repeating-linear-gradient(45deg,#cfcfcf 0 2px,#ececec 2px 5px)";
   }
   if (b.assorted) {
+    const v = b.variantColors;
+    if (v && v.length > 0) {
+      const stops = v.length === 1 ? v[0] : [...v, v[0]].join(",");
+      return `background:conic-gradient(from 0deg,${stops})`;
+    }
     return `background:${ASSORTED_SWIRL}`;
   }
   return `background:${b.color}`;
@@ -79,25 +145,29 @@ function svgPieSlice(
   return `<path d="M ${cx} ${cy} L ${a.x.toFixed(2)} ${a.y.toFixed(2)} A ${r} ${r} 0 ${largeArc} 0 ${b.x.toFixed(2)} ${b.y.toFixed(2)} Z" fill="${fill}"/>`;
 }
 
-function svgBead(b: OrderBead, x: number, y: number, r: number): string {
+function svgBead(
+  b: OrderBead,
+  x: number,
+  y: number,
+  r: number,
+  index: number,
+): string {
   const xs = x.toFixed(2);
   const ys = y.toFixed(2);
+
+  // 1. Base body — colored circle / assorted pie slices / out hatched.
+  //    Kept as a fallback behind any photo overlay so the bead still reads
+  //    as something if the email client blocks remote images.
   let body = "";
   if (b.stock === "out") {
     body = `<circle cx="${xs}" cy="${ys}" r="${r}" fill="url(#hatch)" stroke="rgba(0,0,0,0.08)" stroke-width="1"/>`;
   } else if (b.assorted) {
-    const colors = [
-      "#ff6b6b",
-      "#f7b733",
-      "#52c41a",
-      "#13c2c2",
-      "#1890ff",
-      "#9c27b0",
-    ];
+    const colors = assortedColorsFor(b);
+    const n = colors.length;
     body = colors
       .map((c, i) => {
-        const a1 = (i / 6) * 360 - 90;
-        const a2 = ((i + 1) / 6) * 360 - 90;
+        const a1 = (i / n) * 360 - 90;
+        const a2 = ((i + 1) / n) * 360 - 90;
         return svgPieSlice(x, y, r, a1, a2, c);
       })
       .join("");
@@ -105,8 +175,61 @@ function svgBead(b: OrderBead, x: number, y: number, r: number): string {
     body = `<circle cx="${xs}" cy="${ys}" r="${r}" fill="${b.color}" stroke="rgba(0,0,0,0.06)" stroke-width="1"/>`;
   }
 
+  // 2. Image overlay — clipped to a circle so the photo fills the bead
+  //    shape. Email clients that block remote images will show the body
+  //    underneath instead. Clip-path id is unique per bead position.
+  let image = "";
+  if (b.imageUrl) {
+    const clipId = `bead-clip-${index}`;
+    const imgX = (x - r).toFixed(2);
+    const imgY = (y - r).toFixed(2);
+    const imgD = (r * 2).toFixed(2);
+    image = `<clipPath id="${clipId}"><circle cx="${xs}" cy="${ys}" r="${r}"/></clipPath>` +
+      `<image href="${escapeHtml(b.imageUrl)}" x="${imgX}" y="${imgY}" width="${imgD}" height="${imgD}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${clipId})"/>`;
+  }
+
+  // 3. Variant indicator chip — when an image is hiding the body fill,
+  //    add a small dot so the shop still sees the assortment / picked
+  //    variant. For assorted beads this renders the swirl of variant
+  //    colors; for a variant-picked bead it renders the solid color.
+  let assortedChip = "";
+  if (b.imageUrl && b.assorted) {
+    const cx = (x - r * 0.65).toFixed(2);
+    const cy = (y - r * 0.65).toFixed(2);
+    const cr = (r * 0.3).toFixed(2);
+    const colors = assortedColorsFor(b);
+    const n = colors.length;
+    const cxN = x - r * 0.65;
+    const cyN = y - r * 0.65;
+    const crN = r * 0.3;
+    assortedChip =
+      `<circle cx="${cx}" cy="${cy}" r="${cr}" fill="white" stroke="rgba(0,0,0,0.1)" stroke-width="0.5"/>` +
+      colors
+        .map((c, i) => {
+          const a1 = (i / n) * 360 - 90;
+          const a2 = ((i + 1) / n) * 360 - 90;
+          return svgPieSlice(cxN, cyN, crN * 0.85, a1, a2, c);
+        })
+        .join("");
+  } else if (
+    b.imageUrl &&
+    !b.assorted &&
+    b.variantColors &&
+    b.variantColors.length > 0 &&
+    b.variantColors.includes(b.color)
+  ) {
+    const cx = (x - r * 0.65).toFixed(2);
+    const cy = (y - r * 0.65).toFixed(2);
+    const cr = (r * 0.3).toFixed(2);
+    assortedChip =
+      `<circle cx="${cx}" cy="${cy}" r="${cr}" fill="white" stroke="rgba(0,0,0,0.1)" stroke-width="0.5"/>` +
+      `<circle cx="${cx}" cy="${cy}" r="${(r * 0.3 * 0.85).toFixed(2)}" fill="${b.color}"/>`;
+  }
+
+  // 4. Specular highlight (skip on out-of-stock and on image — the photo
+  //    has its own lighting and an extra ellipse just looks like a smudge).
   let highlight = "";
-  if (b.stock !== "out") {
+  if (b.stock !== "out" && !b.imageUrl) {
     const hx = (x - r * 0.3).toFixed(2);
     const hy = (y - r * 0.4).toFixed(2);
     const hrx = (r * 0.4).toFixed(2);
@@ -114,13 +237,14 @@ function svgBead(b: OrderBead, x: number, y: number, r: number): string {
     highlight = `<ellipse cx="${hx}" cy="${hy}" rx="${hrx}" ry="${hry}" fill="rgba(255,255,255,0.55)"/>`;
   }
 
+  // 5. Letter overlay — on top of everything so lettered beads still read.
   let letter = "";
   if (b.letter) {
     const ly = (y + r * 0.36).toFixed(2);
     letter = `<text x="${xs}" y="${ly}" font-family="Arial, sans-serif" font-size="${(r * 1.05).toFixed(2)}" font-weight="bold" fill="#ffffff" text-anchor="middle" paint-order="stroke" stroke="rgba(0,0,0,0.5)" stroke-width="1.4">${escapeHtml(b.letter)}</text>`;
   }
 
-  return body + highlight + letter;
+  return body + image + assortedChip + highlight + letter;
 }
 
 function buildDesignSvg(design: OrderBead[]): string {
@@ -131,7 +255,7 @@ function buildDesignSvg(design: OrderBead[]): string {
   for (let i = 0; i < count; i++) {
     const angle = -90 - (count - i) * step;
     const pos = polar(SVG_CENTER, SVG_CENTER, SVG_RING_RADIUS, angle);
-    beads += svgBead(design[i], pos.x, pos.y, SVG_BEAD_RADIUS);
+    beads += svgBead(design[i], pos.x, pos.y, SVG_BEAD_RADIUS, i);
   }
   const summary = `${count} bead${count === 1 ? "" : "s"}`;
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -153,21 +277,38 @@ type BomRow = {
   key: string;
   name: string;
   swatch: string;
+  imageUrl: string | null;
+  variantDotColor: string | null;
   count: number;
   letters: string[];
   sizeMm: number;
 };
 
+function variantDotColorFor(b: OrderBead): string | null {
+  if (
+    b.imageUrl &&
+    !b.assorted &&
+    b.variantColors &&
+    b.variantColors.length > 0 &&
+    b.variantColors.includes(b.color)
+  ) {
+    return b.color;
+  }
+  return null;
+}
+
 function buildBom(design: OrderBead[]): BomRow[] {
   const map = new Map<string, BomRow>();
   for (const b of design) {
-    const key = `${b.name ?? b.color}|${b.color}|${b.assorted ? "A" : ""}|${b.lettered ? "L" : ""}|${b.sizeMm ?? 8}`;
+    const key = `${b.name ?? b.color}|${b.color}|${b.assorted ? "A" : ""}|${b.lettered ? "L" : ""}|${b.sizeMm ?? 8}|${b.imageUrl ?? ""}`;
     let row = map.get(key);
     if (!row) {
       row = {
         key,
         name: b.name ?? b.color,
         swatch: beadSwatchStyle(b),
+        imageUrl: b.imageUrl ?? null,
+        variantDotColor: variantDotColorFor(b),
         count: 0,
         letters: [],
         sizeMm: b.sizeMm ?? 8,
@@ -185,15 +326,30 @@ function buildBom(design: OrderBead[]): BomRow[] {
 function buildRingHtmlFallback(design: OrderBead[]): string {
   return design
     .map((b) => {
-      const style =
-        `display:inline-block;width:18px;height:18px;border-radius:50%;margin:1px;` +
-        `box-shadow:inset 0 -2px 3px rgba(0,0,0,0.18),inset 0 2px 3px rgba(255,255,255,0.25);` +
-        `vertical-align:middle;` +
-        beadSwatchStyle(b);
+      // If the bead has an image, render an <img> thumbnail so the fallback
+      // matches what the user designed. Otherwise use the colored/assorted
+      // CSS swatch.
+      let core: string;
+      if (b.imageUrl) {
+        const dot = variantDotColorFor(b);
+        const wrapper = `display:inline-block;position:relative;width:18px;height:18px;margin:1px;vertical-align:middle;`;
+        const img = `<img src="${escapeHtml(b.imageUrl)}" alt="" style="display:block;width:18px;height:18px;border-radius:50%;object-fit:cover;border:1px solid rgba(0,0,0,0.06)"/>`;
+        const dotSpan = dot
+          ? `<span style="position:absolute;top:-2px;left:-2px;width:7px;height:7px;border-radius:50%;background:${dot};border:1px solid #fff;box-shadow:0 0 0 0.5px rgba(0,0,0,0.1);"></span>`
+          : "";
+        core = `<span style="${wrapper}">${img}${dotSpan}</span>`;
+      } else {
+        const style =
+          `display:inline-block;width:18px;height:18px;border-radius:50%;margin:1px;` +
+          `box-shadow:inset 0 -2px 3px rgba(0,0,0,0.18),inset 0 2px 3px rgba(255,255,255,0.25);` +
+          `vertical-align:middle;` +
+          beadSwatchStyle(b);
+        core = `<span style="${style}"></span>`;
+      }
       const letter = b.letter
         ? `<span style="display:inline-block;width:18px;text-align:center;font-size:10px;font-weight:bold;color:#fff;margin-left:-19px;line-height:18px;vertical-align:middle;text-shadow:0 1px 1px rgba(0,0,0,0.5)">${escapeHtml(b.letter)}</span>`
         : "";
-      return `<span style="${style}"></span>${letter}`;
+      return `${core}${letter}`;
     })
     .join("");
 }
@@ -226,16 +382,29 @@ function buildEmailHtml(body: OrderBody): string {
   }
 
   const bomRows = bom
-    .map(
-      (r) => `
+    .map((r) => {
+      let swatch: string;
+      if (r.imageUrl) {
+        const img = `<img src="${escapeHtml(r.imageUrl)}" alt="" style="display:block;width:14px;height:14px;border-radius:50%;object-fit:cover;border:1px solid rgba(0,0,0,0.06)"/>`;
+        const dot = r.variantDotColor
+          ? `<span style="position:absolute;top:-2px;left:-2px;width:6px;height:6px;border-radius:50%;background:${r.variantDotColor};border:1px solid #fff;box-shadow:0 0 0 0.5px rgba(0,0,0,0.1);"></span>`
+          : "";
+        swatch = `<span style="display:inline-block;position:relative;width:14px;height:14px;vertical-align:middle;margin-right:6px;">${img}${dot}</span>`;
+      } else {
+        swatch = `<span style="display:inline-block;width:14px;height:14px;border-radius:50%;${r.swatch};vertical-align:middle;margin-right:6px;border:1px solid rgba(0,0,0,0.06)"></span>`;
+      }
+      const variantNote = r.variantDotColor
+        ? ` &middot; <span style="color:#7a6a60;">color ${escapeHtml(r.variantDotColor)}</span>`
+        : "";
+      return `
         <tr>
           <td style="padding:6px 4px;">
-            <span style="display:inline-block;width:14px;height:14px;border-radius:50%;${r.swatch};vertical-align:middle;margin-right:6px;border:1px solid rgba(0,0,0,0.06)"></span>
-            ${escapeHtml(r.name)} (${r.sizeMm}mm)${r.letters.length > 0 ? ` &mdash; letters: ${r.letters.map(escapeHtml).join(", ")}` : ""}
+            ${swatch}
+            ${escapeHtml(r.name)} (${r.sizeMm}mm)${variantNote}${r.letters.length > 0 ? ` &mdash; letters: ${r.letters.map(escapeHtml).join(", ")}` : ""}
           </td>
           <td style="padding:6px 4px;text-align:right;font-variant-numeric:tabular-nums;"><strong>${r.count}</strong></td>
-        </tr>`,
-    )
+        </tr>`;
+    })
     .join("");
 
   return `<!DOCTYPE html>
@@ -312,7 +481,8 @@ function buildEmailText(body: OrderBody): string {
   for (const r of bom) {
     const letters =
       r.letters.length > 0 ? ` — letters: ${r.letters.join(", ")}` : "";
-    lines.push(`  ${r.name} (${r.sizeMm}mm)${letters} × ${r.count}`);
+    const variant = r.variantDotColor ? ` — color ${r.variantDotColor}` : "";
+    lines.push(`  ${r.name} (${r.sizeMm}mm)${variant}${letters} × ${r.count}`);
   }
   lines.push("");
   lines.push(`Total beads: ${totalBeads}`);
@@ -434,15 +604,27 @@ export async function POST(req: Request) {
     );
   }
 
-  const html = buildEmailHtml(body);
-  const text = buildEmailText(body);
+  // Fetch every unique image referenced by the design and inline them as
+  // base64 data URIs. SVG <image href=...> with remote URLs is blocked by
+  // most email-client renderers when the SVG is treated as an offline
+  // attachment; data URIs eliminate the network dependency so the photos
+  // actually render. Falls back to the original URL on fetch failure.
+  const imageMap = await inlineDesignImages(body.design);
+  const renderDesign: OrderBead[] = body.design.map((b) => ({
+    ...b,
+    imageUrl: b.imageUrl ? (imageMap.get(b.imageUrl) ?? b.imageUrl) : null,
+  }));
+  const renderBody: OrderBody = { ...body, design: renderDesign };
+
+  const html = buildEmailHtml(renderBody);
+  const text = buildEmailText(renderBody);
   const subject = `Your Beadoof order — ${body.customerName}`;
   // Customer is the primary recipient; the shop is CC'd so they always
   // get a copy of the receipt.
   const to = body.customerEmail.trim();
   const cc = shopEmail;
 
-  const designSvg = buildDesignSvg(body.design);
+  const designSvg = buildDesignSvg(renderDesign);
   const attachments: Attachment[] = [
     {
       filename: "design.svg",

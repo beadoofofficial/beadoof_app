@@ -20,6 +20,12 @@ export default function OrderForm({ design, onClose, onSent }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  // Captured at submit time so the success screen keeps showing the right
+  // counts even after the parent clears `design` via onSent.
+  const [submittedSummary, setSubmittedSummary] = useState<{
+    beads: number;
+    lengthIn: string;
+  } | null>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -51,6 +57,8 @@ export default function OrderForm({ design, onClose, onSent }: Props) {
           lettered: b.lettered,
           letter: b.letter,
           sizeMm: b.sizeMm,
+          imageUrl: b.imageUrl,
+          variantColors: b.variantColors,
         })),
       };
       const res = await fetch("/api/order", {
@@ -63,6 +71,12 @@ export default function OrderForm({ design, onClose, onSent }: Props) {
         setError(data.error || "Order failed");
         return;
       }
+      // Snapshot totals BEFORE onSent clears the parent's design.
+      const totalMm = design.reduce((s, b) => s + (b.sizeMm ?? 8), 0);
+      setSubmittedSummary({
+        beads: design.length,
+        lengthIn: (totalMm / 25.4).toFixed(1),
+      });
       setSuccess(
         data.mode === "smtp"
           ? "Order sent! The shop has been notified."
@@ -112,7 +126,8 @@ export default function OrderForm({ design, onClose, onSent }: Props) {
             <div className="text-5xl">✓</div>
             <h3 className="text-base font-bold text-emerald-700">{success}</h3>
             <p className="text-sm text-[#7a6a60]">
-              {totalBeads} beads · {totalIn} in
+              {submittedSummary?.beads ?? totalBeads} beads ·{" "}
+              {submittedSummary?.lengthIn ?? totalIn} in
             </p>
             <button
               type="button"

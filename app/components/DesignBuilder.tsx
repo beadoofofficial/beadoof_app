@@ -10,6 +10,8 @@ import OrderForm from "./OrderForm";
 export type Bead = {
   color: string;
   stock: StockStatus;
+  /** Inventory row id; used to count usages against the maxPerDesign cap. */
+  id?: string;
   name?: string;
   assorted?: boolean;
   lettered?: boolean;
@@ -17,6 +19,11 @@ export type Bead = {
   quantity?: number;
   lowThreshold?: number;
   sizeMm?: number;
+  imageUrl?: string | null;
+  /** When set, customers can only use this bead up to N times in one design. */
+  maxPerDesign?: number | null;
+  /** Specific colors that make up an assorted pack. Replaces the rainbow. */
+  variantColors?: string[];
 };
 
 const MM_PER_INCH = 25.4;
@@ -56,6 +63,68 @@ function DonutBead({
       ? "w-12 h-12"
       : "w-10 h-10";
 
+  // Image takes precedence over color when present. Wrap in a circle and
+  // keep the highlight + letter overlay so it still reads as a bead.
+  if (bead.imageUrl) {
+    const showVariantDot =
+      !bead.assorted &&
+      bead.variantColors &&
+      bead.variantColors.length > 0 &&
+      bead.variantColors.includes(bead.color);
+    return (
+      <div className={`relative ${dim}`}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={bead.imageUrl}
+          alt={bead.name ?? ""}
+          className="absolute inset-0 w-full h-full rounded-full object-cover shadow-[0_1px_2px_rgba(0,0,0,0.08)]"
+          draggable={false}
+        />
+        {bead.stock === "out" && (
+          <div
+            className="absolute inset-0 rounded-full"
+            style={{
+              background:
+                "repeating-linear-gradient(45deg, rgba(207,207,207,0.85) 0 2px, rgba(236,236,236,0.85) 2px 5px)",
+            }}
+          />
+        )}
+        <div
+          className="absolute inset-0 rounded-full pointer-events-none"
+          style={{
+            background:
+              "radial-gradient(circle at 35% 30%, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 35%)",
+            boxShadow:
+              "inset 0 -3px 5px rgba(0,0,0,0.12), inset 0 2px 4px rgba(255,255,255,0.15)",
+          }}
+        />
+        {showVariantDot && (
+          <span
+            className="absolute -top-0.5 -left-0.5 rounded-full shadow ring-1 ring-white/80 pointer-events-none"
+            style={{
+              width: fluid ? "30%" : size === "lg" ? "1.125rem" : "0.875rem",
+              height: fluid ? "30%" : size === "lg" ? "1.125rem" : "0.875rem",
+              background: bead.color,
+            }}
+            aria-hidden
+          />
+        )}
+        {bead.letter && (
+          <span
+            className="absolute inset-0 flex items-center justify-center font-extrabold text-white select-none pointer-events-none uppercase"
+            style={{
+              fontSize: fluid ? "55%" : size === "lg" ? "1.25rem" : "1rem",
+              textShadow:
+                "0 1px 1px rgba(0,0,0,0.6), 0 0 3px rgba(0,0,0,0.45)",
+            }}
+          >
+            {bead.letter}
+          </span>
+        )}
+      </div>
+    );
+  }
+
   if (bead.stock === "out") {
     return (
       <div className={`relative ${dim}`}>
@@ -77,7 +146,16 @@ function DonutBead({
       ? "radial-gradient(circle at 30% 30%, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0) 35%), radial-gradient(circle at 70% 70%, rgba(255,255,255,0.4) 0%, rgba(255,255,255,0) 25%), "
       : "";
 
-  const baseFill = bead.assorted ? ASSORTED_SWIRL : bead.color;
+  // Assorted with explicit variant colors → build the swirl from them.
+  // Otherwise fall back to the default rainbow.
+  const assortedSwirl = (() => {
+    const v = bead.variantColors;
+    if (!v || v.length === 0) return ASSORTED_SWIRL;
+    if (v.length === 1) return v[0];
+    return `conic-gradient(from 0deg,${[...v, v[0]].join(",")})`;
+  })();
+
+  const baseFill = bead.assorted ? assortedSwirl : bead.color;
 
   return (
     <div className={`relative ${dim}`}>
@@ -119,6 +197,15 @@ function BraceletRing({
   // ring stays a complete circle.
   const ringSize = Math.max(RING_CAPACITY, count + 1);
   const step = 360 / ringSize;
+  // Bead diameter scales with the ring's chord length so adjacent beads
+  // never overlap. Chord between slots = 2 * R * sin(step / 2) where R is
+  // 40% of the container width. We use 90% of the chord for a small visible
+  // gap and clamp to a sensible min/max so super-low counts don't render
+  // giant beads and super-high counts don't disappear.
+  const RING_RADIUS_PCT = 40;
+  const chordPct =
+    2 * RING_RADIUS_PCT * Math.sin(((step / 2) * Math.PI) / 180);
+  const beadSizePct = Math.max(7, Math.min(13, chordPct * 0.9));
   // Beads grow counter-clockwise from the top: the newest bead sits just to
   // the left of the silhouette, with older beads further around the ring.
   // design[count - 1] = newest, design[0] = oldest. The silhouette itself
@@ -165,14 +252,15 @@ function BraceletRing({
             aria-label={`Select ${bead.name ?? "bead"} at position ${i + 1}`}
             aria-pressed={isSelected}
             title="Tap to select"
-            className={`absolute w-[14%] aspect-square rounded-full transition-[left,top,transform] duration-200 ease-out cursor-pointer ${
+            className={`absolute aspect-square rounded-full transition-[left,top,transform,width] duration-200 ease-out cursor-pointer ${
               isSelected
                 ? "ring-3 ring-[#5a3a24] ring-offset-2 ring-offset-white z-20 scale-110"
                 : "hover:scale-105 active:scale-95 z-0"
             }`}
             style={{
-              left: `calc(50% + 40% * cos(${angle}deg))`,
-              top: `calc(50% + 40% * sin(${angle}deg))`,
+              width: `${beadSizePct}%`,
+              left: `calc(50% + ${RING_RADIUS_PCT}% * cos(${angle}deg))`,
+              top: `calc(50% + ${RING_RADIUS_PCT}% * sin(${angle}deg))`,
               transform: "translate(-50%, -50%)",
             }}
           >
@@ -185,10 +273,11 @@ function BraceletRing({
           tap will land. Skipped once the bracelet is full. */}
       {nextAngle !== null && (
         <div
-          className="absolute w-[14%] aspect-square rounded-full border-2 border-dashed border-[#a07258] bg-[#fbf1ea]/60 flex items-center justify-center text-[#a07258] text-base font-bold animate-pulse"
+          className="absolute aspect-square rounded-full border-2 border-dashed border-[#a07258] bg-[#fbf1ea]/60 flex items-center justify-center text-[#a07258] text-base font-bold animate-pulse"
           style={{
-            left: `calc(50% + 40% * cos(${nextAngle}deg))`,
-            top: `calc(50% + 40% * sin(${nextAngle}deg))`,
+            width: `${beadSizePct}%`,
+            left: `calc(50% + ${RING_RADIUS_PCT}% * cos(${nextAngle}deg))`,
+            top: `calc(50% + ${RING_RADIUS_PCT}% * sin(${nextAngle}deg))`,
             transform: "translate(-50%, -50%)",
           }}
           aria-hidden
@@ -233,6 +322,7 @@ export default function DesignBuilder({ beads }: { beads: Bead[] }) {
   const [letterText, setLetterText] = useState("");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [orderOpen, setOrderOpen] = useState(false);
+  const [variantPickerFor, setVariantPickerFor] = useState<Bead | null>(null);
 
   const letterPacks = useMemo(() => beads.filter((b) => b.lettered), [beads]);
   const paletteBeads = useMemo(() => beads.filter((b) => !b.lettered), [beads]);
@@ -278,6 +368,19 @@ export default function DesignBuilder({ beads }: { beads: Bead[] }) {
   );
 
   const atMax = design.length >= MAX_BEADS;
+
+  // How many of this bead are already placed in the design. Matched by
+  // inventory id so two beads from the same pack share a count, including
+  // every letter from a lettered pack.
+  const usageOf = (b: Bead) =>
+    b.id ? design.filter((d) => d.id === b.id).length : 0;
+
+  /** True when this bead has a maxPerDesign cap and we've reached it. */
+  const atItemLimit = (b: Bead) =>
+    typeof b.maxPerDesign === "number" &&
+    b.maxPerDesign > 0 &&
+    usageOf(b) >= b.maxPerDesign;
+
   const totalMm = design.reduce(
     (sum, b) => sum + (b.sizeMm ?? DEFAULT_BEAD_MM),
     0,
@@ -293,6 +396,7 @@ export default function DesignBuilder({ beads }: { beads: Bead[] }) {
 
   const addBead = (b: Bead) => {
     if (beadLevel(b) === "out") return;
+    if (atItemLimit(b)) return;
     setDesign((d) => (d.length < MAX_BEADS ? [...d, b] : d));
   };
 
@@ -305,7 +409,18 @@ export default function DesignBuilder({ beads }: { beads: Bead[] }) {
       .filter((c) => /[A-Z0-9]/.test(c));
     if (chars.length === 0) return;
     setDesign((d) => {
-      const room = MAX_BEADS - d.length;
+      let room = MAX_BEADS - d.length;
+      // If the lettered pack has a maxPerDesign cap, only let the user
+      // type up to the remaining quota for that pack.
+      if (
+        typeof selectedPack.maxPerDesign === "number" &&
+        selectedPack.maxPerDesign > 0 &&
+        selectedPack.id
+      ) {
+        const used = d.filter((b) => b.id === selectedPack.id).length;
+        const packRoom = selectedPack.maxPerDesign - used;
+        room = Math.min(room, Math.max(0, packRoom));
+      }
       const toAdd = chars.slice(0, Math.max(0, room));
       return [...d, ...toAdd.map((letter) => ({ ...selectedPack, letter }))];
     });
@@ -346,10 +461,22 @@ export default function DesignBuilder({ beads }: { beads: Bead[] }) {
       !window.confirm("Replace your design with a random one?")
     )
       return;
-    const next = Array.from(
-      { length: RANDOM_FILL_COUNT },
-      () => inStock[Math.floor(Math.random() * inStock.length)],
-    );
+    // Greedy fill: track counts so beads with maxPerDesign don't exceed
+    // their cap. If every in-stock bead is capped out, we stop early.
+    const next: Bead[] = [];
+    const counts = new Map<string, number>();
+    while (next.length < RANDOM_FILL_COUNT) {
+      const candidates = inStock.filter((b) => {
+        if (typeof b.maxPerDesign !== "number" || !b.id) return true;
+        return (counts.get(b.id) ?? 0) < b.maxPerDesign;
+      });
+      if (candidates.length === 0) break;
+      const picked = candidates[Math.floor(Math.random() * candidates.length)];
+      next.push(picked);
+      if (picked.id) {
+        counts.set(picked.id, (counts.get(picked.id) ?? 0) + 1);
+      }
+    }
     setDesign(next);
   };
 
@@ -555,6 +682,26 @@ export default function DesignBuilder({ beads }: { beads: Bead[] }) {
         />
       )}
 
+      {variantPickerFor && (
+        <VariantPicker
+          bead={variantPickerFor}
+          onClose={() => setVariantPickerFor(null)}
+          onPick={(color) => {
+            const base = variantPickerFor;
+            if (color === null) {
+              addBead(base);
+            } else {
+              addBead({
+                ...base,
+                color,
+                assorted: false,
+              });
+            }
+            setVariantPickerFor(null);
+          }}
+        />
+      )}
+
       {/* Bead Colors / palette card */}
       <div className="bg-white rounded-2xl shadow-sm p-4 md:p-5">
         <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
@@ -584,7 +731,8 @@ export default function DesignBuilder({ beads }: { beads: Bead[] }) {
         <div className="grid grid-cols-5 gap-x-3 gap-y-3 md:gap-x-4 md:gap-y-4 justify-items-center">
           {paletteBeads.map((b, i) => {
             const level = beadLevel(b);
-            const disabled = level === "out" || atMax;
+            const itemLimited = atItemLimit(b);
+            const disabled = level === "out" || atMax || itemLimited;
             const dotClass =
               level === "out"
                 ? "bg-[#cfcfcf]"
@@ -593,20 +741,61 @@ export default function DesignBuilder({ beads }: { beads: Bead[] }) {
                   : "bg-green-500";
             const qtyLabel =
               typeof b.quantity === "number" ? ` · ${b.quantity} left` : "";
+            const assortedLabel = b.assorted ? " · assorted" : "";
+            const used = usageOf(b);
+            const limitLabel =
+              typeof b.maxPerDesign === "number"
+                ? ` · ${used}/${b.maxPerDesign} used in design`
+                : "";
+            const titleText = atMax
+              ? "Design is full"
+              : itemLimited
+                ? `${b.name ?? b.color} — max ${b.maxPerDesign} per design reached`
+                : `${b.name ?? b.color}${assortedLabel}${qtyLabel}${limitLabel}`;
             return (
               <button
                 key={i}
                 type="button"
-                onClick={() => addBead(b)}
+                onClick={() => {
+                  if (b.variantColors && b.variantColors.length > 0) {
+                    setVariantPickerFor(b);
+                  } else {
+                    addBead(b);
+                  }
+                }}
                 disabled={disabled}
-                aria-label={`Add ${b.name ?? b.color} bead${qtyLabel}`}
-                title={
-                  atMax ? "Design is full" : `${b.name ?? b.color}${qtyLabel}`
-                }
+                aria-label={`Add ${b.name ?? b.color} bead${assortedLabel}${qtyLabel}${limitLabel}`}
+                title={titleText}
                 className="flex flex-col items-center gap-1.5 group disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <div className="relative group-hover:scale-110 group-active:scale-95 transition-transform">
                   <DonutBead bead={b} />
+                  {/* Assorted indicator — only when an image hides the
+                      rainbow swirl that would otherwise mark this bead as
+                      a mixed pack. Mirrors the quantity badge in the
+                      opposite corner. */}
+                  {b.assorted && b.imageUrl && (
+                    <span
+                      className="absolute -top-1 -left-1 w-4.5 h-4.5 rounded-full shadow ring-1 ring-white/80"
+                      style={{
+                        background:
+                          b.variantColors && b.variantColors.length > 0
+                            ? b.variantColors.length === 1
+                              ? b.variantColors[0]
+                              : `conic-gradient(from 0deg,${[
+                                  ...b.variantColors,
+                                  b.variantColors[0],
+                                ].join(",")})`
+                            : ASSORTED_SWIRL,
+                      }}
+                      title={
+                        b.variantColors && b.variantColors.length > 0
+                          ? `Assorted pack — ${b.variantColors.length} colors`
+                          : "Assorted pack"
+                      }
+                      aria-label="Assorted pack"
+                    />
+                  )}
                   {typeof b.quantity === "number" && (
                     <span
                       className={`absolute -top-1 -right-1 min-w-4.5 h-4.5 px-1 rounded-full text-[10px] font-bold flex items-center justify-center shadow ring-1 ring-black/5 ${
@@ -621,7 +810,20 @@ export default function DesignBuilder({ beads }: { beads: Bead[] }) {
                     </span>
                   )}
                 </div>
-                <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
+                <div className="flex items-center gap-1">
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${dotClass}`}
+                  />
+                  {typeof b.maxPerDesign === "number" && (
+                    <span
+                      className={`text-[9px] tabular-nums font-semibold leading-none ${
+                        itemLimited ? "text-red-600" : "text-[#9a8478]"
+                      }`}
+                    >
+                      {used}/{b.maxPerDesign}
+                    </span>
+                  )}
+                </div>
               </button>
             );
           })}
@@ -720,5 +922,97 @@ export default function DesignBuilder({ beads }: { beads: Bead[] }) {
         </div>
       </div>
     </>
+  );
+}
+
+function VariantPicker({
+  bead,
+  onClose,
+  onPick,
+}: {
+  bead: Bead;
+  onClose: () => void;
+  onPick: (color: string | null) => void;
+}) {
+  const variants = bead.variantColors ?? [];
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end md:items-center justify-center p-3 md:p-6"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm bg-white rounded-2xl shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-4 border-b border-[#f1e4d5] flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-base font-bold truncate">
+              {bead.name ?? "Pick a color"}
+            </h2>
+            <p className="text-[11px] text-[#7a6a60]">
+              Choose a specific color or use the assorted mix.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-2xl leading-none text-[#7a6a60] hover:text-foreground px-2 shrink-0"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="p-4">
+          <div className="grid grid-cols-4 gap-3 justify-items-center">
+            {variants.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => onPick(c)}
+                className="flex flex-col items-center gap-1.5 group"
+                aria-label={`Use color ${c}`}
+              >
+                <div className="relative group-hover:scale-110 group-active:scale-95 transition-transform">
+                  <DonutBead bead={{ ...bead, color: c, assorted: false }} />
+                </div>
+                <span className="text-[10px] tabular-nums text-[#7a6a60] uppercase">
+                  {c}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => onPick(null)}
+            className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-[#e4d3c4] bg-[#fbf1ea] text-[#5a3a24] text-sm font-semibold hover:bg-[#f3e2d2] transition-colors"
+          >
+            <span
+              className="inline-block w-5 h-5 rounded-full"
+              style={{
+                background:
+                  variants.length === 0
+                    ? ASSORTED_SWIRL
+                    : variants.length === 1
+                      ? variants[0]
+                      : `conic-gradient(from 0deg,${[...variants, variants[0]].join(",")})`,
+              }}
+              aria-hidden
+            />
+            Any color (assorted)
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

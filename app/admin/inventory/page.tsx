@@ -3,24 +3,36 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import BarcodeScanner from "./BarcodeScanner";
+import ImageCropper from "@/app/components/ImageCropper";
+import { createClient as createBrowserClient } from "@/utils/supabase/client";
 import {
   stockLevelOf,
+  buildAssortedSwirlCss,
+  CATEGORY_LABELS,
+  CATEGORY_VALUES,
   type InventoryItem,
+  type ItemCategory,
   type StockStatus,
 } from "@/lib/inventory";
+
+const IMAGE_BUCKET = "inventory-images";
 
 type Toast = { kind: "ok" | "err"; text: string } | null;
 
 type DraftForm = {
   barcode: string;
   name: string;
+  category: ItemCategory;
   color_hex: string;
+  image_url: string | null;
   is_assorted: boolean;
   is_lettered: boolean;
+  variant_colors: string[];
   stock: StockStatus;
   quantity: number;
   low_stock_threshold: number;
   size_mm: number;
+  max_per_design: string;
   price_cents: string;
   notes: string;
 };
@@ -28,13 +40,17 @@ type DraftForm = {
 const blankDraft = (barcode = ""): DraftForm => ({
   barcode,
   name: "",
+  category: "bead",
   color_hex: "#e3a235",
+  image_url: null,
   is_assorted: false,
   is_lettered: false,
+  variant_colors: [],
   stock: "in",
   quantity: 1,
   low_stock_threshold: 5,
   size_mm: 8,
+  max_per_design: "",
   price_cents: "",
   notes: "",
 });
@@ -42,13 +58,18 @@ const blankDraft = (barcode = ""): DraftForm => ({
 const itemToDraft = (it: InventoryItem): DraftForm => ({
   barcode: it.barcode,
   name: it.name,
+  category: it.category ?? "bead",
+  image_url: it.image_url ?? null,
   color_hex: it.color_hex || "#e3a235",
   is_assorted: it.is_assorted,
   is_lettered: it.is_lettered ?? false,
+  variant_colors: Array.isArray(it.variant_colors) ? it.variant_colors : [],
   stock: it.stock,
   quantity: it.quantity,
   low_stock_threshold: it.low_stock_threshold ?? 5,
   size_mm: it.size_mm ?? 8,
+  max_per_design:
+    typeof it.max_per_design === "number" ? String(it.max_per_design) : "",
   price_cents:
     it.price_cents != null ? (it.price_cents / 100).toFixed(2) : "",
   notes: it.notes ?? "",
@@ -65,6 +86,55 @@ export default function InventoryAdminPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast>(null);
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [pendingImage, setPendingImage] = useState<{
+    src: string;
+    filename: string;
+  } | null>(null);
+
+  const stageImageFile = (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      flash({ kind: "err", text: "Only image files are allowed." });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      flash({ kind: "err", text: "Image must be under 5 MB." });
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPendingImage({ src: url, filename: file.name });
+  };
+
+  const cancelCrop = () => {
+    if (pendingImage) URL.revokeObjectURL(pendingImage.src);
+    setPendingImage(null);
+  };
+
+  const uploadCroppedBlob = async (blob: Blob) => {
+    if (!draft || uploading) return;
+    setUploading(true);
+    try {
+      const supabase = createBrowserClient();
+      const path = `${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 9)}.jpg`;
+      const { error } = await supabase.storage
+        .from(IMAGE_BUCKET)
+        .upload(path, blob, { contentType: "image/jpeg", upsert: false });
+      if (error) {
+        flash({ kind: "err", text: `Upload failed: ${error.message}` });
+        return;
+      }
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from(IMAGE_BUCKET).getPublicUrl(path);
+      setDraft((d) => (d ? { ...d, image_url: publicUrl } : d));
+      flash({ kind: "ok", text: "Image uploaded" });
+      cancelCrop();
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const startEdit = (it: InventoryItem) => {
     setEditingId(it.id);
@@ -131,13 +201,19 @@ export default function InventoryAdminPage() {
       const body = {
         barcode: draft.barcode,
         name: draft.name,
+        category: draft.category,
+        image_url: draft.image_url,
         is_assorted: draft.is_assorted,
         is_lettered: draft.is_lettered,
+        variant_colors: draft.is_assorted ? draft.variant_colors : [],
         color_hex: draft.is_assorted ? null : draft.color_hex || null,
         stock: draft.stock,
         quantity: draft.quantity,
         low_stock_threshold: draft.low_stock_threshold,
         size_mm: draft.size_mm,
+        max_per_design: draft.max_per_design.trim()
+          ? Math.max(1, parseInt(draft.max_per_design, 10) || 1)
+          : null,
         price_cents: draft.price_cents
           ? Math.round(parseFloat(draft.price_cents) * 100)
           : null,
@@ -308,6 +384,91 @@ export default function InventoryAdminPage() {
                     className="w-full border border-[#e4d3c4] rounded-lg px-3 py-2"
                   />
                 </Field>
+                <Field label="Category">
+                  <select
+                    value={draft.category}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        category: e.target.value as ItemCategory,
+                      })
+                    }
+                    className="w-full border border-[#e4d3c4] rounded-lg px-3 py-2"
+                  >
+                    {CATEGORY_VALUES.map((c) => (
+                      <option key={c} value={c}>
+                        {CATEGORY_LABELS[c]}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="block text-[11px] text-[#7a6a60] mt-1">
+                    Only <strong>Bead</strong> items show on the home palette.
+                    Pins / hooks / clasps stay in admin only.
+                  </span>
+                </Field>
+                <Field label="Photo (optional)">
+                  <div className="flex items-center gap-3">
+                    {draft.image_url ? (
+                      <div className="relative w-16 h-16 shrink-0">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={draft.image_url}
+                          alt="bead preview"
+                          className="w-16 h-16 rounded-xl object-cover border border-[#e4d3c4]"
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDraft({ ...draft, image_url: null })
+                          }
+                          aria-label="Remove image"
+                          className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-white border border-[#e4d3c4] text-[#5a3a24] text-sm shadow"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        className="w-16 h-16 shrink-0 rounded-xl border border-dashed border-[#e4d3c4] flex items-center justify-center text-[#9a8478] text-2xl"
+                        aria-hidden
+                      >
+                        📷
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <label className="inline-block">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          disabled={uploading}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) stageImageFile(file);
+                            e.target.value = "";
+                          }}
+                          className="hidden"
+                        />
+                        <span
+                          className={`inline-block text-xs px-3 py-1.5 rounded-full font-semibold cursor-pointer ${
+                            uploading
+                              ? "bg-[#fbf1ea] text-[#a07258] opacity-60 cursor-wait"
+                              : "bg-[#5a3a24] text-white"
+                          }`}
+                        >
+                          {uploading
+                            ? "Uploading…"
+                            : draft.image_url
+                              ? "Replace image"
+                              : "Choose image"}
+                        </span>
+                      </label>
+                      <span className="block text-[11px] text-[#7a6a60]">
+                        Replaces the color swatch on the home palette. PNG /
+                        JPG / WebP, ≤5 MB.
+                      </span>
+                    </div>
+                  </div>
+                </Field>
                 <label className="flex items-center gap-2 text-sm cursor-pointer select-none py-1">
                   <input
                     type="checkbox"
@@ -319,11 +480,89 @@ export default function InventoryAdminPage() {
                   />
                   <span
                     className="w-5 h-5 rounded-full border border-black/10"
-                    style={{ background: ASSORTED_SWATCH }}
+                    style={{
+                      background:
+                        draft.is_assorted && draft.variant_colors.length > 0
+                          ? buildAssortedSwirlCss(draft.variant_colors)
+                          : ASSORTED_SWATCH,
+                    }}
                     aria-hidden
                   />
                   <span className="font-medium">Assorted (mixed colors)</span>
                 </label>
+                {draft.is_assorted && (
+                  <Field label="Variant colors (optional)">
+                    <div className="space-y-2">
+                      {draft.variant_colors.length === 0 ? (
+                        <div className="text-[11px] text-[#7a6a60]">
+                          No specific colors set — renders as a generic
+                          rainbow swirl.
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {draft.variant_colors.map((c, idx) => (
+                            <div
+                              key={idx}
+                              className="flex items-center gap-1 bg-[#fbf6ef] border border-[#e4d3c4] rounded-lg pl-1 pr-1"
+                            >
+                              <input
+                                type="color"
+                                value={c}
+                                onChange={(e) =>
+                                  setDraft({
+                                    ...draft,
+                                    variant_colors: draft.variant_colors.map(
+                                      (v, i) =>
+                                        i === idx ? e.target.value : v,
+                                    ),
+                                  })
+                                }
+                                className="w-8 h-8 cursor-pointer bg-transparent"
+                                aria-label={`Variant color ${idx + 1}`}
+                              />
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setDraft({
+                                    ...draft,
+                                    variant_colors:
+                                      draft.variant_colors.filter(
+                                        (_, i) => i !== idx,
+                                      ),
+                                  })
+                                }
+                                aria-label={`Remove variant color ${idx + 1}`}
+                                className="text-[#a07258] text-lg leading-none px-1 hover:text-red-600"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDraft({
+                            ...draft,
+                            variant_colors: [
+                              ...draft.variant_colors,
+                              "#e3a235",
+                            ],
+                          })
+                        }
+                        className="text-xs px-3 py-1 rounded-full bg-[#fbf1ea] text-[#a07258] font-semibold"
+                      >
+                        + Add color
+                      </button>
+                      <span className="block text-[11px] text-[#7a6a60]">
+                        List the exact colors in this pack. The swirl on the
+                        palette and receipt is built from these instead of the
+                        default rainbow. Leave empty for the generic rainbow.
+                      </span>
+                    </div>
+                  </Field>
+                )}
                 <label className="flex items-center gap-2 text-sm cursor-pointer select-none py-1">
                   <input
                     type="checkbox"
@@ -448,6 +687,23 @@ export default function InventoryAdminPage() {
                     />
                   </Field>
                 </div>
+                <Field label="Max per design (optional)">
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={draft.max_per_design}
+                    onChange={(e) =>
+                      setDraft({ ...draft, max_per_design: e.target.value })
+                    }
+                    placeholder="No limit"
+                    className="w-full border border-[#e4d3c4] rounded-lg px-3 py-2"
+                  />
+                  <span className="block text-[11px] text-[#7a6a60] mt-1">
+                    Leave blank for no limit. When set, customers can only use
+                    this item up to N times in a single design.
+                  </span>
+                </Field>
                 <Field label="Notes (optional)">
                   <textarea
                     value={draft.notes}
@@ -493,27 +749,50 @@ export default function InventoryAdminPage() {
                       key={it.id}
                       className="py-2 flex items-center gap-3 text-sm"
                     >
-                      <span
-                        className="w-7 h-7 rounded-full border border-black/5 shrink-0"
-                        style={{
-                          background:
-                            it.stock === "out"
-                              ? "repeating-linear-gradient(45deg,#cfcfcf 0 2px,#ececec 2px 5px)"
-                              : it.is_assorted
-                                ? ASSORTED_SWATCH
-                                : it.color_hex || "#d9b48a",
-                        }}
-                        aria-hidden
-                      />
+                      {it.image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={it.image_url}
+                          alt=""
+                          className="w-7 h-7 rounded-full object-cover border border-black/10 shrink-0"
+                        />
+                      ) : (
+                        <span
+                          className="w-7 h-7 rounded-full border border-black/5 shrink-0"
+                          style={{
+                            background:
+                              it.stock === "out"
+                                ? "repeating-linear-gradient(45deg,#cfcfcf 0 2px,#ececec 2px 5px)"
+                                : it.is_assorted
+                                  ? it.variant_colors &&
+                                    it.variant_colors.length > 0
+                                    ? buildAssortedSwirlCss(it.variant_colors)
+                                    : ASSORTED_SWATCH
+                                  : it.color_hex || "#d9b48a",
+                          }}
+                          aria-hidden
+                        />
+                      )}
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium truncate">{it.name}</div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-medium truncate">
+                            {it.name}
+                          </span>
+                          {it.category && it.category !== "bead" && (
+                            <span className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-[#fbf1ea] text-[#a07258]">
+                              {CATEGORY_LABELS[it.category] ?? it.category}
+                            </span>
+                          )}
+                        </div>
                         <div className="text-[11px] text-[#7a6a60] truncate">
                           {it.barcode} · {it.size_mm ?? 8}mm
                           {it.is_assorted ? " · Assorted" : ""}
                           {it.is_lettered ? " · Lettered" : ""}
                           {it.stock === "glitter" ? " · Glitter" : ""}
                         </div>
-                        <div className={`text-[11px] font-semibold ${levelClass}`}>
+                        <div
+                          className={`text-[11px] font-semibold ${levelClass}`}
+                        >
                           {levelText}
                         </div>
                       </div>
@@ -564,6 +843,15 @@ export default function InventoryAdminPage() {
           </section>
         </div>
       </div>
+
+      {pendingImage && (
+        <ImageCropper
+          src={pendingImage.src}
+          filename={pendingImage.filename}
+          onCancel={cancelCrop}
+          onConfirm={uploadCroppedBlob}
+        />
+      )}
     </div>
   );
 }

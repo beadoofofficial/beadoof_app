@@ -24,13 +24,16 @@ export async function PATCH(req: Request, { params }: Ctx) {
   const body = await req.json().catch(() => ({}));
   const allowed = [
     "name",
+    "category",
     "color_hex",
     "is_assorted",
     "is_lettered",
+    "variant_colors",
     "stock",
     "quantity",
     "low_stock_threshold",
     "size_mm",
+    "max_per_design",
     "price_cents",
     "image_url",
     "notes",

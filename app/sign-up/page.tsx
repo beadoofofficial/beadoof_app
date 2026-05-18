@@ -57,7 +57,9 @@ function SignUpForm() {
     <div className="min-h-screen flex items-center justify-center bg-[#faf3ea] px-4">
       <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm p-6 md:p-8 space-y-4">
         <div className="text-center">
-          <h1 className="text-2xl font-extrabold">Create your Beadoof account</h1>
+          <h1 className="text-2xl font-extrabold">
+            Create your Beadoof account
+          </h1>
           <p className="text-sm text-[#7a6a60] mt-1">
             Confirm your email to start ordering.
           </p>
@@ -66,7 +68,7 @@ function SignUpForm() {
         {sentTo ? (
           <div className="text-center space-y-3">
             <div className="text-5xl">📧</div>
-            <p className="text-sm text-[#3b2b22]">
+            <p className="text-sm text-foreground">
               A confirmation link was sent to{" "}
               <strong className="break-all">{sentTo}</strong>. Click it to
               activate your account, then come back to sign in.
