@@ -32,6 +32,21 @@ export async function GET() {
   return NextResponse.json(data ?? []);
 }
 
+export async function DELETE(req: Request) {
+  const denied = await assertAdmin();
+  if (denied) return denied;
+
+  const id = new URL(req.url).searchParams.get("id");
+  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+
+  const supabase = createClient(await cookies());
+  const { error } = await supabase.rpc("shop_delete_order", { p_id: id });
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  return NextResponse.json({ ok: true });
+}
+
 export async function PATCH(req: Request) {
   const denied = await assertAdmin();
   if (denied) return denied;

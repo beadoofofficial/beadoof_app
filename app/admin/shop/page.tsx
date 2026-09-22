@@ -164,7 +164,11 @@ export default function ShopAdminPage() {
     .sort((a, b) => a.sort - b.sort);
 
   const inputCls =
-    "border border-cord/60 rounded px-2 py-1.5 text-sm w-full bg-white";
+    "w-full rounded-xl border-2 border-cord/50 bg-white px-2.5 py-1.5 text-sm text-ink focus:border-aqua focus:outline-none";
+  const pillCls = (on: boolean) =>
+    `cursor-pointer rounded-full px-3 py-1.5 font-display text-[13px] font-medium ${
+      on ? "bg-shop-pink text-white shadow-sm" : "bg-white text-ink/80 hover:bg-cord/30"
+    }`;
 
   return (
     <div className="space-y-4">
@@ -191,11 +195,7 @@ export default function ShopAdminPage() {
               {CATEGORIES.map((c) => (
                 <button
                   key={c}
-                  className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
-                    !showSettings && tab === c
-                      ? "bg-shop-pink text-white shadow-sm"
-                      : "bg-white text-ink/80 hover:bg-cord/30"
-                  }`}
+                  className={pillCls(!showSettings && tab === c)}
                   onClick={() => {
                     setShowSettings(false);
                     setTab(c);
@@ -205,11 +205,7 @@ export default function ShopAdminPage() {
                 </button>
               ))}
               <button
-                className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
-                  showSettings
-                    ? "bg-shop-pink text-white shadow-sm"
-                    : "bg-white text-ink/80 hover:bg-cord/30"
-                }`}
+                className={pillCls(showSettings)}
                 onClick={() => setShowSettings(true)}
               >
                 ⚙️ Shop settings
@@ -262,7 +258,7 @@ export default function ShopAdminPage() {
               })}
             </div>
             <button
-              className="bg-shop-pink text-white px-4 py-2 rounded-full text-sm font-semibold disabled:opacity-50"
+              className="cursor-pointer rounded-full bg-shop-pink px-5 py-2 font-display text-sm font-medium text-white shadow-[0_3px_0_#c93a74] active:translate-y-[2px] active:shadow-[0_1px_0_#c93a74] disabled:opacity-50 disabled:shadow-none"
               disabled={savingSettings || !settings.some((s) => s.dirty)}
               onClick={saveSettings}
             >
@@ -414,7 +410,7 @@ export default function ShopAdminPage() {
                       Delete
                     </button>
                     <button
-                      className="text-sm font-semibold text-white bg-shop-pink px-4 py-1.5 rounded-full disabled:opacity-40"
+                      className="cursor-pointer rounded-full bg-shop-pink px-4 py-1.5 font-display text-sm font-medium text-white shadow-[0_3px_0_#c93a74] active:translate-y-[2px] active:shadow-[0_1px_0_#c93a74] disabled:opacity-40 disabled:shadow-none"
                       disabled={!row.dirty || row.saving || !row.value.trim()}
                       onClick={() => saveRow(row)}
                     >
@@ -425,7 +421,7 @@ export default function ShopAdminPage() {
               ))}
 
               <button
-                className="text-sm font-semibold text-ink underline"
+                className="cursor-pointer font-display text-sm font-medium text-shop-muted underline"
                 onClick={addRow}
               >
                 + Add a row

@@ -264,6 +264,35 @@ export default function AdminOrdersPage() {
     };
   }, [refresh]);
 
+  async function deleteOrder(order: Order) {
+    const label = order.code ?? order.customer_name;
+    if (
+      !confirm(
+        `Delete ${label} (${order.customer_name}, PHP ${(order.total ?? 0).toLocaleString()})? This can't be undone.`,
+      )
+    ) {
+      return;
+    }
+    setSavingId(order.id);
+    savingRef.current = true;
+    try {
+      const res = await fetch(
+        `/api/admin/orders?id=${encodeURIComponent(order.id)}`,
+        { method: "DELETE" },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "delete failed");
+      setOrders((os) => os.filter((o) => o.id !== order.id));
+      setExpandedId((e) => (e === order.id ? null : e));
+      setProofOrderId((p) => (p === order.id ? null : p));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Delete failed.");
+    } finally {
+      setSavingId(null);
+      savingRef.current = false;
+    }
+  }
+
   async function patchOrder(order: Order, patch: Partial<Order>) {
     const previous = order;
     setSavingId(order.id);
@@ -329,8 +358,8 @@ export default function AdminOrdersPage() {
   });
 
   const chip = (on: boolean) =>
-    `cursor-pointer rounded-full px-3 py-1.5 text-xs font-semibold ${
-      on ? "bg-shop-pink text-white" : "bg-white text-ink/80 hover:bg-cord/30"
+    `cursor-pointer rounded-full px-3 py-1.5 font-display text-[12.5px] font-medium ${
+      on ? "bg-shop-pink text-white shadow-sm" : "bg-white text-ink/80 hover:bg-cord/30"
     }`;
 
   const proofOrder = orders.find((o) => o.id === proofOrderId) ?? null;
@@ -422,7 +451,7 @@ export default function AdminOrdersPage() {
             </button>
           ))}
           <input
-            className="ml-auto w-full rounded-full border border-cord/60 bg-white px-3.5 py-1.5 text-sm sm:w-60"
+            className="ml-auto w-full rounded-full border-2 border-cord/50 bg-white px-3.5 py-1.5 text-sm focus:border-aqua focus:outline-none sm:w-60"
             placeholder="Search code, name, mobile…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -606,19 +635,29 @@ export default function AdminOrdersPage() {
                         “{o.notes}”
                       </div>
                     )}
-                    <label className="flex items-center gap-1.5 text-xs text-shop-muted">
-                      Deliver
-                      <input
-                        type="date"
-                        className="rounded-lg border border-cord/60 bg-white px-2 py-1 text-xs text-ink"
-                        value={o.delivery_date ?? ""}
+                    <div className="flex flex-wrap items-center gap-3">
+                      <label className="flex items-center gap-1.5 text-xs text-shop-muted">
+                        Deliver
+                        <input
+                          type="date"
+                          className="rounded-lg border-2 border-cord/50 bg-white px-2 py-1 text-xs text-ink focus:border-aqua focus:outline-none"
+                          value={o.delivery_date ?? ""}
+                          disabled={saving}
+                          onChange={(e) =>
+                            patchOrder(o, { delivery_date: e.target.value })
+                          }
+                        />
+                        {saving && <span>Saving…</span>}
+                      </label>
+                      <button
+                        type="button"
+                        className="ml-auto cursor-pointer text-xs font-semibold text-[#a31346] underline disabled:opacity-50"
                         disabled={saving}
-                        onChange={(e) =>
-                          patchOrder(o, { delivery_date: e.target.value })
-                        }
-                      />
-                      {saving && <span>Saving…</span>}
-                    </label>
+                        onClick={() => deleteOrder(o)}
+                      >
+                        Delete order
+                      </button>
+                    </div>
                   </div>
                 )}
               </li>

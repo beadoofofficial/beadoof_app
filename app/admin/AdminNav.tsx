@@ -20,7 +20,7 @@ export default function AdminNav() {
             key={t.href}
             href={t.href}
             aria-current={active ? "page" : undefined}
-            className={`shrink-0 px-3.5 py-1.5 rounded-full text-sm font-semibold transition-colors ${
+            className={`shrink-0 px-3.5 py-1.5 rounded-full font-display text-sm font-medium transition-colors ${
               active
                 ? "bg-shop-pink text-white shadow-sm"
                 : "text-ink/80 hover:bg-cord/30"

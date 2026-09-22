@@ -44,3 +44,11 @@ body {
   background: var(--color-background);
   color: var(--color-foreground);
 }
+
+@layer base {
+  /* checkboxes and radios pick up the shop pink everywhere */
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: var(--color-shop-pink);
+  }
+}
