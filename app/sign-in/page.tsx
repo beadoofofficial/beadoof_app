@@ -101,16 +101,7 @@ function SignInForm() {
           </button>
         </form>
 
-        <div className="text-center pt-2 space-y-1">
-          <div className="text-xs text-[#7a6a60]">
-            New here?{" "}
-            <Link
-              href={`/sign-up?next=${encodeURIComponent(next)}`}
-              className="underline font-semibold"
-            >
-              Create an account
-            </Link>
-          </div>
+        <div className="text-center pt-2">
           <Link href="/" className="block text-xs text-[#7a6a60] underline">
             ← Back to home
           </Link>
