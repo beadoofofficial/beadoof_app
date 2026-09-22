@@ -9,7 +9,7 @@
 // switches which piece is being built. Order-level choices (fulfillment,
 // details, payment) are shared; everything checks out under one code.
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   cleanName,
@@ -114,17 +114,38 @@ function BeadLine({
   color,
   charm,
   small,
+  fit,
 }: {
   text: string;
   color?: string | null;
   charm?: string;
   small?: boolean;
+  /** Scale the beads down with the screen so the whole line fits one strand
+      (used for the shop name in the masthead). */
+  fit?: boolean;
 }) {
-  const letterCls = small
-    ? "h-[26px] w-[26px] rounded-[7px] text-[15px]"
-    : "h-[34px] w-[34px] rounded-[9px] text-[19px]";
+  const chars = String(text ?? "").split("");
+  const spaces = chars.filter((c) => c === " ").length;
+  const letters = Math.max(chars.length - spaces, 1);
+  // available width = shell (≤460px) minus its 18px side paddings; subtract
+  // the 5px gaps and 14px space-beads, split the rest across the letters.
+  const fitStyle = fit
+    ? ({
+        "--bead": `clamp(16px, calc((min(100vw, 460px) - 36px - ${
+          (chars.length - 1) * 5 + spaces * 14
+        }px) / ${letters}), 34px)`,
+      } as React.CSSProperties)
+    : undefined;
+  const letterCls = fit
+    ? "h-(--bead) w-(--bead) rounded-[calc(var(--bead)*0.26)] text-[length:calc(var(--bead)*0.56)]"
+    : small
+      ? "h-[26px] w-[26px] rounded-[7px] text-[15px]"
+      : "h-[34px] w-[34px] rounded-[9px] text-[19px]";
   return (
-    <div className="relative flex flex-wrap justify-center gap-[5px] py-3 before:absolute before:top-1/2 before:left-[6%] before:right-[6%] before:z-0 before:h-[3px] before:rounded-[3px] before:bg-cord before:content-['']">
+    <div
+      className="relative flex flex-wrap justify-center gap-[5px] py-3 before:absolute before:top-1/2 before:left-[6%] before:right-[6%] before:z-0 before:h-[3px] before:rounded-[3px] before:bg-cord before:content-['']"
+      style={fitStyle}
+    >
       {color && <RoundBead hex={color} />}
       {String(text ?? "")
         .split("")
@@ -784,6 +805,10 @@ export default function OrderWizard({
   const [pieceList, setPieceList] = useState<PieceDraft[]>([emptyPiece()]);
   const [active, setActive] = useState(0);
   const [stepError, setStepError] = useState<string | null>(null);
+  /** What's typed in the piece-count box while editing; null = showing the
+      real count. Committed on blur/Enter so typing "10" never passes through
+      "1" and wipes pieces 2+. */
+  const [countDraft, setCountDraft] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [placed, setPlaced] = useState<PlacedOrder | null>(null);
@@ -797,6 +822,42 @@ export default function OrderWizard({
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [view, stepIndex, active]);
+
+  // keep the active chip visible in the piece carousel's scroll strip
+  const chipStripRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    chipStripRef.current
+      ?.querySelector('[aria-current="true"]')
+      ?.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
+  }, [active, view, stepIndex]);
+
+  // which side of the chip strip has more chips hidden off-screen
+  const [chipOverflow, setChipOverflow] = useState({ left: false, right: false });
+  const chipNudged = useRef(false);
+  const updateChipOverflow = useCallback(() => {
+    const el = chipStripRef.current;
+    const left = !!el && el.scrollLeft > 2;
+    const right = !!el && el.scrollLeft + el.clientWidth < el.scrollWidth - 2;
+    setChipOverflow((s) => (s.left === left && s.right === right ? s : { left, right }));
+  }, []);
+  useEffect(() => {
+    // measured in a frame callback (never synchronously in the effect body)
+    const raf = requestAnimationFrame(() => {
+      updateChipOverflow();
+      // first time the strip overflows: nudge it so the customer sees it move
+      const el = chipStripRef.current;
+      if (el && !chipNudged.current && el.scrollWidth > el.clientWidth + 2) {
+        chipNudged.current = true;
+        setTimeout(() => el.scrollBy({ left: 56, behavior: "smooth" }), 400);
+        setTimeout(() => el.scrollBy({ left: -56, behavior: "smooth" }), 1000);
+      }
+    });
+    window.addEventListener("resize", updateChipOverflow);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", updateChipOverflow);
+    };
+  }, [pieceList.length, view, stepIndex, updateChipOverflow]);
 
   const money = (n: number) => formatMoney(settings.currency, n);
   const opts = (cat: Category) => options[cat] ?? [];
@@ -959,6 +1020,7 @@ export default function OrderWizard({
     setOrder({});
     setPieceList([emptyPiece()]);
     setActive(0);
+    setCountDraft(null);
     setStepIndex(0);
     setStepError(null);
     setSubmitError(null);
@@ -1143,6 +1205,27 @@ export default function OrderWizard({
 
   function CountStep() {
     const n = pieceList.length;
+    // the number the steppers work from: whatever is typed, else the real count
+    const base = (() => {
+      const parsed = parseInt(countDraft ?? "", 10);
+      return Number.isFinite(parsed) && parsed >= 1
+        ? Math.min(parsed, MAX_PIECES)
+        : n;
+    })();
+
+    const commit = () => {
+      const parsed = parseInt(countDraft ?? "", 10);
+      if (Number.isFinite(parsed) && parsed >= 1) {
+        setPieceCount(parsed);
+      }
+      setCountDraft(null); // empty or junk just falls back to the real count
+    };
+
+    const bump = (delta: number) => {
+      setPieceCount(base + delta);
+      setCountDraft(null);
+    };
+
     return (
       <div className="rounded-[18px] bg-white px-5 py-6">
         <div className="flex items-center justify-center gap-6">
@@ -1150,20 +1233,35 @@ export default function OrderWizard({
             type="button"
             aria-label="One piece fewer"
             className={`${iconBtn} bg-paper text-2xl disabled:cursor-not-allowed disabled:opacity-40`}
-            disabled={n <= 1}
-            onClick={() => setPieceCount(n - 1)}
+            disabled={base <= 1}
+            onClick={() => bump(-1)}
           >
             −
           </button>
-          <span className="min-w-16 text-center font-display text-5xl font-semibold tabular-nums">
-            {n}
-          </span>
+          <input
+            type="text"
+            inputMode="numeric"
+            aria-label="Number of pieces"
+            className="w-24 border-b-2 border-cord bg-transparent text-center font-display text-5xl font-semibold tabular-nums focus:border-aqua focus:outline-none"
+            value={countDraft ?? String(n)}
+            onFocus={(e) => e.target.select()}
+            onChange={(e) =>
+              setCountDraft(e.target.value.replace(/\D/g, "").slice(0, 2))
+            }
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                commit();
+                e.currentTarget.blur();
+              }
+            }}
+          />
           <button
             type="button"
             aria-label="One piece more"
             className={`${iconBtn} bg-paper text-2xl disabled:cursor-not-allowed disabled:opacity-40`}
-            disabled={n >= MAX_PIECES}
-            onClick={() => setPieceCount(n + 1)}
+            disabled={base >= MAX_PIECES}
+            onClick={() => bump(1)}
           >
             +
           </button>
@@ -1374,44 +1472,92 @@ export default function OrderWizard({
     if (pieceList.length <= 1 || !step.perPiece) return null;
     return (
       <div className="mb-4 flex items-center gap-2">
+        {/* arrows are desktop-only; on phones the strip swipes */}
         <button
           type="button"
           aria-label="Previous piece"
-          className={`${iconBtn} h-8 w-8 text-sm disabled:cursor-not-allowed disabled:opacity-40`}
+          className={`${iconBtn} hidden h-8 w-8 text-sm disabled:cursor-not-allowed disabled:opacity-40 md:block`}
           disabled={active === 0}
           onClick={() => switchPiece(active - 1)}
         >
           ‹
         </button>
-        <div className="flex flex-1 items-center justify-center gap-1.5 overflow-x-auto py-0.5">
-          {pieceList.map((p, i) => {
-            const ready = pieceReady(p);
-            const isActive = i === active;
-            return (
-              <button
-                key={i}
-                type="button"
-                aria-label={`Piece ${i + 1}${ready ? ", finished" : ""}`}
-                aria-current={isActive ? "true" : undefined}
-                className={`shrink-0 cursor-pointer rounded-full border-2 px-3 py-1 text-[12.5px] font-bold ${focusRing} ${
-                  isActive
-                    ? "border-shop-pink bg-shop-pink text-white"
-                    : ready
-                      ? "border-aqua bg-white text-[#0e6d76]"
-                      : "border-cord bg-white text-shop-muted"
-                }`}
-                onClick={() => switchPiece(i)}
-              >
-                {i + 1}
-                {ready && !isActive ? " ✓" : ""}
-              </button>
-            );
-          })}
+        <div className="relative min-w-0 flex-1">
+          {/* inner w-max track: centers while it fits, scrolls from the start
+              once it overflows — a centered flex container would clip the left
+              chips beyond reach */}
+          <div
+            ref={chipStripRef}
+            className="overflow-x-auto py-0.5"
+            onScroll={updateChipOverflow}
+          >
+            <div className="mx-auto flex w-max items-center gap-1.5 px-0.5">
+            {pieceList.map((p, i) => {
+              const ready = pieceReady(p);
+              const isActive = i === active;
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  aria-label={`Piece ${i + 1}${ready ? ", finished" : ""}`}
+                  aria-current={isActive ? "true" : undefined}
+                  className={`shrink-0 cursor-pointer rounded-full border-2 px-3 py-1 text-[12.5px] font-bold ${focusRing} ${
+                    isActive
+                      ? "border-shop-pink bg-shop-pink text-white"
+                      : ready
+                        ? "border-aqua bg-white text-[#0e6d76]"
+                        : "border-cord bg-white text-shop-muted"
+                  }`}
+                  onClick={() => switchPiece(i)}
+                >
+                  {i + 1}
+                  {ready && !isActive ? " ✓" : ""}
+                </button>
+              );
+            })}
+            </div>
+          </div>
+          {/* swipe affordance: a pink chevron floats over whichever edge has
+              chips hidden past it; tapping pages the strip along */}
+          {chipOverflow.left && (
+            <button
+              type="button"
+              aria-label="Earlier pieces"
+              className="absolute inset-y-0 left-0 z-10 flex w-8 cursor-pointer items-center justify-start bg-gradient-to-r from-paper via-paper/80 to-transparent md:hidden"
+              onClick={() =>
+                chipStripRef.current?.scrollBy({
+                  left: -chipStripRef.current.clientWidth * 0.6,
+                  behavior: "smooth",
+                })
+              }
+            >
+              <span className="grid h-5 w-5 place-items-center rounded-full bg-shop-pink text-[11px] font-bold text-white shadow">
+                ‹
+              </span>
+            </button>
+          )}
+          {chipOverflow.right && (
+            <button
+              type="button"
+              aria-label="More pieces"
+              className="absolute inset-y-0 right-0 z-10 flex w-8 cursor-pointer items-center justify-end bg-gradient-to-l from-paper via-paper/80 to-transparent md:hidden"
+              onClick={() =>
+                chipStripRef.current?.scrollBy({
+                  left: chipStripRef.current.clientWidth * 0.6,
+                  behavior: "smooth",
+                })
+              }
+            >
+              <span className="grid h-5 w-5 place-items-center rounded-full bg-shop-pink text-[11px] font-bold text-white shadow">
+                ›
+              </span>
+            </button>
+          )}
         </div>
         <button
           type="button"
           aria-label="Next piece"
-          className={`${iconBtn} h-8 w-8 text-sm disabled:cursor-not-allowed disabled:opacity-40`}
+          className={`${iconBtn} hidden h-8 w-8 text-sm disabled:cursor-not-allowed disabled:opacity-40 md:block`}
           disabled={active === pieceList.length - 1}
           onClick={() => switchPiece(active + 1)}
         >
@@ -1535,7 +1681,7 @@ export default function OrderWizard({
       <div className={shellCls}>
         <section className={viewCls}>
           <header className="pt-[34px] pb-5 text-center">
-            <BeadLine text={settings.businessName || "BEADOOF"} />
+            <BeadLine text={settings.businessName || "BEADOOF"} fit />
             {settings.tagline && (
               <p className="mt-1 text-[15px] text-shop-muted">
                 {settings.tagline}

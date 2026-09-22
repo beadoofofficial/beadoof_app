@@ -1,21 +1,8 @@
 import Script from "next/script";
-import { Fredoka, Karla } from "next/font/google";
 import OrderWizard from "./components/OrderWizard";
 import { getShopBootstrap } from "@/lib/shop.server";
 import { getUser, isAdminEmail } from "@/lib/auth.server";
 import type { ShopBootstrap } from "@/lib/shop";
-
-const fredoka = Fredoka({
-  variable: "--font-fredoka",
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-});
-
-const karla = Karla({
-  variable: "--font-karla",
-  subsets: ["latin"],
-  weight: ["400", "500", "700"],
-});
 
 export default async function Home() {
   let boot: ShopBootstrap | null = null;
@@ -29,9 +16,7 @@ export default async function Home() {
   const user = await getUser();
 
   return (
-    <div
-      className={`${fredoka.variable} ${karla.variable} min-h-screen bg-paper font-shop text-base leading-normal text-ink antialiased`}
-    >
+    <div className="min-h-screen bg-paper font-shop text-base leading-normal text-ink antialiased">
       {/* Draws payment QR codes from pasted text; if it fails to load the
           form shows the text instead. */}
       <Script

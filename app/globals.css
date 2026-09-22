@@ -3,8 +3,6 @@
 @theme {
   --color-background: #faf6f1;
   --color-foreground: #3b2b22;
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
   --breakpoint-xs: 22rem;
 
   /* ---- shop (order wizard) palette, ported from the Apps Script theme ---- */
@@ -18,10 +16,6 @@
   --color-ivory: #fffdf5;
   --color-ivory-edge: #e6ddc6;
 
-  /* Fredoka/Karla are provided as CSS vars by next/font on the page wrappers */
-  --font-display: var(--font-fredoka), sans-serif;
-  --font-shop: var(--font-karla), system-ui, -apple-system, sans-serif;
-
   --animate-rise: rise 0.28s ease both;
   @keyframes rise {
     from {
@@ -33,6 +27,17 @@
       transform: none;
     }
   }
+}
+
+/* Font tokens are `inline` so utilities emit var(--font-…) at the element
+   itself — the next/font variables are declared on <html> by the root
+   layout, and a plain @theme token would try (and fail) to resolve them
+   at :root before that. */
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-fredoka), sans-serif;
+  --font-shop: var(--font-karla), system-ui, -apple-system, sans-serif;
 }
 
 body {
