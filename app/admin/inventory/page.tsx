@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import BarcodeScanner from "./BarcodeScanner";
 import ImageCropper from "@/app/components/ImageCropper";
@@ -277,18 +276,15 @@ export default function InventoryAdminPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#faf3ea] p-4 md:p-6 text-foreground">
-      <div className="max-w-5xl mx-auto">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-2xl font-bold">Bead Inventory</h1>
-            <p className="text-xs text-[#7a6a60]">
-              Scan a barcode to add stock. Unknown codes open an Add form.
-            </p>
-          </div>
-          <Link href="/admin" className="text-sm text-[#7a6a60] underline">
-            ← Admin
-          </Link>
+    <div className="text-foreground">
+      <div>
+        <div className="flex items-baseline justify-between mb-4 flex-wrap gap-2">
+          <h1 className="font-[family-name:var(--font-fredoka)] text-2xl font-semibold text-[#3b2b22]">
+            Bead inventory
+          </h1>
+          <p className="text-xs text-[#9a8478]">
+            Scan a barcode to add stock. Unknown codes open an Add form.
+          </p>
         </div>
 
         {toast && (

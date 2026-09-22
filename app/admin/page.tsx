@@ -1,128 +1,360 @@
 "use client";
-import { useEffect, useState } from "react";
-import Image from "next/image";
-import Link from "next/link";
 
-type Item = { id: string; title: string; img: string };
+// Admin orders dashboard — the replacement for the orders sheet. Check the
+// details, open the proof of payment, move the payment status along, and
+// track making + delivery the way the sheet's CREATING STATUS and
+// Date delivery columns did.
 
-function readItems(): Item[] {
-  try {
-    const raw = localStorage.getItem("beadoof:items");
-    if (!raw) return [];
-    return JSON.parse(raw) as Item[];
-  } catch {
-    return [];
-  }
+import { useEffect, useMemo, useState } from "react";
+import { dotted } from "@/lib/shop";
+
+type Order = {
+  id: string;
+  code: string | null;
+  created_at: string;
+  customer_name: string;
+  contact: string | null;
+  customer_email: string | null;
+  merch: string | null;
+  bead_name: string | null;
+  color: string | null;
+  charm: string | null;
+  letter_size: string | null;
+  bead_mix: string | null;
+  addons: string[] | null;
+  fulfillment: string | null;
+  payment: string | null;
+  notes: string | null;
+  subtotal: number | null;
+  discount_label: string | null;
+  total: number | null;
+  payment_status: string | null;
+  creating_status: string | null;
+  delivery_date: string | null;
+  proof_url: string | null;
+  proof_at: string | null;
+};
+
+const PAY_STATUSES = ["Unpaid", "Proof sent", "Paid"];
+const MAKE_STATUSES = ["Not started", "In progress", "Done"];
+
+function payChip(status: string): string {
+  if (/^paid$/i.test(status)) return "bg-emerald-100 text-emerald-800";
+  if (/proof/i.test(status)) return "bg-sky-100 text-sky-800";
+  if (/unpaid/i.test(status)) return "bg-amber-100 text-amber-800";
+  return "bg-gray-100 text-gray-700";
 }
 
-function writeItems(items: Item[]) {
-  localStorage.setItem("beadoof:items", JSON.stringify(items));
+function makeChip(status: string): string {
+  if (/done/i.test(status)) return "bg-emerald-100 text-emerald-800";
+  if (/progress/i.test(status)) return "bg-violet-100 text-violet-800";
+  return "bg-gray-100 text-gray-600";
 }
 
-export default function AdminPage() {
-  const [items, setItems] = useState<Item[]>([]);
-  const [title, setTitle] = useState("");
-  const [img, setImg] = useState("");
+const selectCls =
+  "border border-[#e4d3c4] rounded-lg px-2 py-1.5 text-xs bg-white text-[#3b2b22] disabled:opacity-50";
+
+export default function AdminOrdersPage() {
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<string>("All");
+  const [query, setQuery] = useState("");
+  const [savingId, setSavingId] = useState<string | null>(null);
 
   useEffect(() => {
-    setItems(readItems());
+    let cancelled = false;
+    fetch("/api/admin/orders")
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "load failed");
+        if (!cancelled) setOrders(data as Order[]);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Could not load orders.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  function addItem() {
-    if (!title.trim()) return;
-    const id = title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-    const newItem = { id, title: title.trim(), img: img || "/file.svg" };
-    const next = [...items.filter((i) => i.id !== id), newItem];
-    setItems(next);
-    writeItems(next);
-    setTitle("");
-    setImg("");
+  async function patchOrder(order: Order, patch: Partial<Order>) {
+    const previous = order;
+    setSavingId(order.id);
+    setOrders((os) => os.map((o) => (o.id === order.id ? { ...o, ...patch } : o)));
+    try {
+      const res = await fetch("/api/admin/orders", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: order.id, ...patch }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "save failed");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Update failed.");
+      setOrders((os) => os.map((o) => (o.id === order.id ? previous : o)));
+    } finally {
+      setSavingId(null);
+    }
   }
 
-  function removeItem(id: string) {
-    const next = items.filter((i) => i.id !== id);
-    setItems(next);
-    writeItems(next);
-  }
+  const stats = useMemo(() => {
+    const unpaid = orders.filter(
+      (o) => !/^paid$/i.test(o.payment_status ?? "Unpaid"),
+    );
+    const toMake = orders.filter((o) => !/done/i.test(o.creating_status ?? ""));
+    const paidTotal = orders
+      .filter((o) => /^paid$/i.test(o.payment_status ?? ""))
+      .reduce((s, o) => s + (o.total ?? 0), 0);
+    return { all: orders.length, unpaid: unpaid.length, toMake: toMake.length, paidTotal };
+  }, [orders]);
+
+  const counts = useMemo(() => {
+    const c: Record<string, number> = { All: orders.length };
+    for (const s of PAY_STATUSES) {
+      c[s] = orders.filter((o) => (o.payment_status ?? "Unpaid") === s).length;
+    }
+    return c;
+  }, [orders]);
+
+  const shown = orders.filter((o) => {
+    if (filter !== "All" && (o.payment_status ?? "Unpaid") !== filter) return false;
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    return [o.code, o.customer_name, o.bead_name, o.contact, o.merch]
+      .filter(Boolean)
+      .some((v) => String(v).toLowerCase().includes(q));
+  });
 
   return (
-    <div className="min-h-screen bg-[rgba(250,246,241,1)] p-4 md:p-6">
-      <div className="max-w-4xl mx-auto">
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="text-2xl font-bold">Beadoof Admin</h1>
-          <div className="flex items-center gap-3 text-sm">
-            <Link
-              href="/admin/inventory"
-              className="px-3 py-1.5 rounded-full bg-[#5a3a24] text-white"
-            >
-              Inventory & Barcodes
-            </Link>
-            <Link href="/" className="text-[#7a6a60] underline">
-              Back to Home
-            </Link>
-          </div>
-        </div>
+    <div className="space-y-4">
+      <div className="flex items-baseline justify-between flex-wrap gap-2">
+        <h1 className="font-[family-name:var(--font-fredoka)] text-2xl font-semibold text-[#3b2b22]">
+          Orders
+        </h1>
+        <span className="text-xs text-[#9a8478]">
+          Orders land here the moment someone finishes the form.
+        </span>
+      </div>
 
-        <div className="bg-white p-4 rounded-lg shadow-sm">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
-            <input
-              className="col-span-1 border rounded px-3 py-2"
-              placeholder="Item title (eg. Bracelet)"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-            <input
-              className="col-span-1 border rounded px-3 py-2"
-              placeholder="Image path (eg. /file.svg)"
-              value={img}
-              onChange={(e) => setImg(e.target.value)}
-            />
-            <div className="col-span-1 flex">
-              <button
-                className="ml-auto bg-[#8a5a3b] text-white px-4 rounded"
-                onClick={addItem}
-              >
-                Add
-              </button>
+      {error && (
+        <div className="bg-red-50 text-red-700 rounded-xl p-3 text-sm">
+          {error}
+          {/sign in/i.test(error) && (
+            <>
+              {" "}
+              <a href="/sign-in" className="underline font-semibold">
+                Sign in
+              </a>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* stat tiles */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+        {[
+          ["All orders", String(stats.all)],
+          ["Awaiting payment", String(stats.unpaid)],
+          ["Still to make", String(stats.toMake)],
+          ["Paid so far", `PHP ${stats.paidTotal.toLocaleString()}`],
+        ].map(([label, value]) => (
+          <div key={label} className="bg-white rounded-2xl shadow-sm px-4 py-3">
+            <div className="text-[11px] uppercase tracking-wide text-[#9a8478]">
+              {label}
+            </div>
+            <div className="font-[family-name:var(--font-fredoka)] text-xl font-semibold text-[#3b2b22]">
+              {value}
             </div>
           </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {items.length === 0 && (
-              <div className="text-sm text-[#7a6a60]">No items yet.</div>
-            )}
-            {items.map((it) => (
-              <div
-                key={it.id}
-                className="flex items-center justify-between p-2 border rounded"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 relative">
-                    <Image
-                      src={it.img}
-                      alt={it.title}
-                      fill
-                      className="object-contain"
-                    />
-                  </div>
-                  <div>
-                    <div className="font-medium">{it.title}</div>
-                    <div className="text-xs text-[#7a6a60]">{it.id}</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    className="text-sm text-red-600"
-                    onClick={() => removeItem(it.id)}
-                  >
-                    Remove
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        ))}
       </div>
+
+      {/* filters */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {["All", ...PAY_STATUSES].map((s) => (
+          <button
+            key={s}
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
+              filter === s
+                ? "bg-[#5a3a24] text-white"
+                : "bg-white text-[#5a4438] hover:bg-[#f0e4d6]"
+            }`}
+            onClick={() => setFilter(s)}
+          >
+            {s} ({counts[s] ?? 0})
+          </button>
+        ))}
+        <input
+          className="ml-auto border border-[#e4d3c4] rounded-full px-3.5 py-1.5 text-sm bg-white w-full sm:w-60"
+          placeholder="Search code, name, mobile…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </div>
+
+      {loading ? (
+        <div className="text-sm text-[#7a6a60]">Loading…</div>
+      ) : shown.length === 0 ? (
+        <div className="bg-white rounded-2xl shadow-sm p-8 text-center text-sm text-[#7a6a60]">
+          {orders.length === 0
+            ? "No orders yet — they show up here as soon as the first one is placed."
+            : "Nothing matches that filter."}
+        </div>
+      ) : (
+        <ul className="space-y-2.5">
+          {shown.map((o) => {
+            const pay = o.payment_status ?? "Unpaid";
+            const make = o.creating_status ?? "Not started";
+            const piece = dotted(
+              o.merch,
+              o.bead_name && `“${o.bead_name}”`,
+              o.color,
+              o.letter_size,
+              o.bead_mix,
+            );
+            const saving = savingId === o.id;
+            return (
+              <li
+                key={o.id}
+                className="bg-white rounded-2xl shadow-sm overflow-hidden"
+              >
+                {/* head row */}
+                <div className="flex items-center gap-2 flex-wrap px-4 pt-3">
+                  <span className="font-[family-name:var(--font-fredoka)] font-semibold text-[#3b2b22]">
+                    {o.code ?? "(no code)"}
+                  </span>
+                  <span
+                    className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full font-bold ${payChip(pay)}`}
+                  >
+                    {pay}
+                  </span>
+                  <span
+                    className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full font-bold ${makeChip(make)}`}
+                  >
+                    {make}
+                  </span>
+                  {typeof o.total === "number" && (
+                    <span className="ml-auto font-[family-name:var(--font-fredoka)] font-semibold text-[#5a3a24]">
+                      PHP {o.total.toLocaleString()}
+                    </span>
+                  )}
+                </div>
+
+                {/* details */}
+                <div className="px-4 pb-3 pt-1.5 space-y-1">
+                  <div className="text-sm">
+                    <span className="font-semibold">{o.customer_name}</span>
+                    <span className="text-[#7a6a60]">
+                      {o.contact ? ` · ${o.contact}` : ""}
+                      {o.customer_email ? ` · ${o.customer_email}` : ""}
+                    </span>
+                  </div>
+                  {piece && (
+                    <div className="text-sm text-[#5a4438]">{piece}</div>
+                  )}
+                  <div className="text-[12px] text-[#9a8478] flex gap-x-3 gap-y-0.5 flex-wrap">
+                    <span>{new Date(o.created_at).toLocaleString()}</span>
+                    {o.fulfillment && <span>{o.fulfillment}</span>}
+                    {o.payment && <span>{o.payment}</span>}
+                    {(o.addons?.length ?? 0) > 0 && (
+                      <span>Add-ons: {o.addons!.join(", ")}</span>
+                    )}
+                    {o.discount_label && <span>{o.discount_label}</span>}
+                  </div>
+                  {o.notes && (
+                    <div className="text-[12px] text-[#7a6a60] italic">
+                      “{o.notes}”
+                    </div>
+                  )}
+                </div>
+
+                {/* controls */}
+                <div className="flex items-center gap-2 flex-wrap px-4 py-2.5 bg-[#fbf6ef] border-t border-[#f1e4d5]">
+                  <label className="flex items-center gap-1.5 text-[11px] text-[#9a8478]">
+                    Payment
+                    <select
+                      className={selectCls}
+                      value={pay}
+                      disabled={saving}
+                      onChange={(e) =>
+                        patchOrder(o, { payment_status: e.target.value })
+                      }
+                    >
+                      {(PAY_STATUSES.includes(pay)
+                        ? PAY_STATUSES
+                        : [pay, ...PAY_STATUSES]
+                      ).map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-1.5 text-[11px] text-[#9a8478]">
+                    Making
+                    <select
+                      className={selectCls}
+                      value={MAKE_STATUSES.includes(make) ? make : make}
+                      disabled={saving}
+                      onChange={(e) =>
+                        patchOrder(o, {
+                          creating_status:
+                            e.target.value === "Not started"
+                              ? ""
+                              : e.target.value,
+                        })
+                      }
+                    >
+                      {(MAKE_STATUSES.includes(make)
+                        ? MAKE_STATUSES
+                        : [make, ...MAKE_STATUSES]
+                      ).map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-1.5 text-[11px] text-[#9a8478]">
+                    Deliver
+                    <input
+                      type="date"
+                      className={selectCls}
+                      value={o.delivery_date ?? ""}
+                      disabled={saving}
+                      onChange={(e) =>
+                        patchOrder(o, { delivery_date: e.target.value })
+                      }
+                    />
+                  </label>
+                  {saving && (
+                    <span className="text-[11px] text-[#9a8478]">Saving…</span>
+                  )}
+                  {o.proof_url && (
+                    <a
+                      href={o.proof_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="ml-auto text-xs font-semibold text-white bg-[#2fa3ae] px-3 py-1.5 rounded-full"
+                    >
+                      View proof
+                      {o.proof_at
+                        ? ` (${new Date(o.proof_at).toLocaleDateString()})`
+                        : ""}
+                    </a>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
