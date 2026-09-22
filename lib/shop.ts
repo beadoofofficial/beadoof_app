@@ -55,9 +55,8 @@ export type ShopBootstrap = {
   options: ShopOptions;
 };
 
-/** The choices a customer makes in the wizard. */
-export type WizardSelections = {
-  fulfillment?: string;
+/** One piece of an order — an order can hold several. */
+export type PieceSelections = {
   merch?: string;
   color?: string;
   beadName?: string;
@@ -65,6 +64,12 @@ export type WizardSelections = {
   size?: string;
   bead?: string;
   addons: string[];
+};
+
+/** The choices a customer makes in the wizard: the piece currently being
+    built plus the order-level fields (who, how, payment). */
+export type WizardSelections = PieceSelections & {
+  fulfillment?: string;
   customerName?: string;
   contact?: string;
   notes?: string;
@@ -105,25 +110,38 @@ export function isPlainMerch(
   return !!findOpt(options, "MERCH", merch)?.plain;
 }
 
-export function subtotalOf(
+/** What one piece costs on its own (fulfillment is charged once per order). */
+export function pieceSubtotalOf(
   options: ShopOptions,
-  sel: WizardSelections,
+  piece: PieceSelections,
   pricePerLetter: number,
 ): number {
-  const plain = isPlainMerch(options, sel.merch);
+  const plain = isPlainMerch(options, piece.merch);
   let t = 0;
-  t += priceOf(options, "FULFILLMENT", sel.fulfillment);
-  t += priceOf(options, "MERCH", sel.merch);
-  t += priceOf(options, "COLOR", sel.color);
-  t += priceOf(options, "DESIGN", sel.design);
+  t += priceOf(options, "MERCH", piece.merch);
+  t += priceOf(options, "COLOR", piece.color);
+  t += priceOf(options, "DESIGN", piece.design);
   if (!plain) {
-    t += priceOf(options, "SIZE", sel.size);
-    t += priceOf(options, "BEAD", sel.bead);
-    if (sel.beadName) {
-      t += sel.beadName.replace(/\s/g, "").length * (pricePerLetter || 0);
+    t += priceOf(options, "SIZE", piece.size);
+    t += priceOf(options, "BEAD", piece.bead);
+    if (piece.beadName) {
+      t += piece.beadName.replace(/\s/g, "").length * (pricePerLetter || 0);
     }
   }
-  for (const a of sel.addons ?? []) t += priceOf(options, "ADDON", a);
+  for (const a of piece.addons ?? []) t += priceOf(options, "ADDON", a);
+  return Math.round(t);
+}
+
+/** All pieces plus the once-per-order fulfillment charge. */
+export function orderSubtotalOf(
+  options: ShopOptions,
+  fulfillment: string | undefined,
+  pieces: PieceSelections[],
+  pricePerLetter: number,
+): number {
+  const t =
+    priceOf(options, "FULFILLMENT", fulfillment) +
+    pieces.reduce((s, p) => s + pieceSubtotalOf(options, p, pricePerLetter), 0);
   return Math.round(t);
 }
 

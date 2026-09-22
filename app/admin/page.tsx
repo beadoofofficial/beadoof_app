@@ -8,6 +8,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { dotted } from "@/lib/shop";
 
+type OrderPiece = {
+  merch: string;
+  color: string;
+  beadName: string;
+  design: string;
+  size: string | null;
+  bead: string | null;
+  addons: string[];
+  subtotal: number;
+};
+
 type Order = {
   id: string;
   code: string | null;
@@ -22,6 +33,8 @@ type Order = {
   letter_size: string | null;
   bead_mix: string | null;
   addons: string[] | null;
+  pieces: OrderPiece[] | null;
+  piece_count: number | null;
   fulfillment: string | null;
   payment: string | null;
   notes: string | null;
@@ -211,6 +224,7 @@ export default function AdminOrdersPage() {
           {shown.map((o) => {
             const pay = o.payment_status ?? "Unpaid";
             const make = o.creating_status ?? "Not started";
+            const multi = (o.pieces?.length ?? 0) > 1;
             const piece = dotted(
               o.merch,
               o.bead_name && `“${o.bead_name}”`,
@@ -255,8 +269,33 @@ export default function AdminOrdersPage() {
                       {o.customer_email ? ` · ${o.customer_email}` : ""}
                     </span>
                   </div>
-                  {piece && (
-                    <div className="text-sm text-[#5a4438]">{piece}</div>
+                  {multi ? (
+                    <ol className="list-none space-y-0.5 text-sm text-[#5a4438]">
+                      {o.pieces!.map((p, i) => (
+                        <li key={i}>
+                          <span className="mr-1 inline-block w-4 text-[11px] text-[#9a8478]">
+                            {i + 1}.
+                          </span>
+                          {dotted(
+                            p.merch,
+                            p.beadName && `“${p.beadName}”`,
+                            p.color,
+                            p.size ?? undefined,
+                            p.bead ?? undefined,
+                            p.addons.length
+                              ? `+ ${p.addons.join(", ")}`
+                              : undefined,
+                          )}
+                          <span className="ml-1 text-[11px] text-[#9a8478]">
+                            PHP {p.subtotal.toLocaleString()}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : (
+                    piece && (
+                      <div className="text-sm text-[#5a4438]">{piece}</div>
+                    )
                   )}
                   <div className="text-[12px] text-[#9a8478] flex gap-x-3 gap-y-0.5 flex-wrap">
                     <span>{new Date(o.created_at).toLocaleString()}</span>

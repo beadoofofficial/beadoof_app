@@ -6,6 +6,33 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --breakpoint-xs: 22rem;
+
+  /* ---- shop (order wizard) palette, ported from the Apps Script theme ---- */
+  --color-ink: #241c33;
+  --color-paper: #f1ecf9;
+  --color-shop-pink: #ff4f95;
+  --color-aqua: #2fcbd9;
+  --color-lemon: #ffd24a;
+  --color-cord: #c5b8df;
+  --color-shop-muted: #6e6383;
+  --color-ivory: #fffdf5;
+  --color-ivory-edge: #e6ddc6;
+
+  /* Fredoka/Karla are provided as CSS vars by next/font on the page wrappers */
+  --font-display: var(--font-fredoka), sans-serif;
+  --font-shop: var(--font-karla), system-ui, -apple-system, sans-serif;
+
+  --animate-rise: rise 0.28s ease both;
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
 }
 
 body {

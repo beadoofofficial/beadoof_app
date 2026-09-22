@@ -11,6 +11,7 @@ type OrderRow = {
   fulfillment: string | null;
   total: number | null;
   payment_status: string | null;
+  piece_count: number | null;
   created_at: string;
 };
 
@@ -26,7 +27,7 @@ export default async function MyOrdersPage() {
   const { data, error } = await supabase
     .from("orders")
     .select(
-      "id, code, customer_name, merch, bead_name, fulfillment, total, payment_status, created_at",
+      "id, code, customer_name, merch, bead_name, fulfillment, total, payment_status, piece_count, created_at",
     )
     .order("created_at", { ascending: false });
 
@@ -93,6 +94,9 @@ export default async function MyOrdersPage() {
                     <div className="text-[11px] text-[#7a6a60] truncate">
                       {new Date(o.created_at).toLocaleString()}
                       {o.merch ? ` · ${o.merch}` : ""}
+                      {(o.piece_count ?? 1) > 1
+                        ? ` +${(o.piece_count ?? 1) - 1} more`
+                        : ""}
                       {o.bead_name ? ` · “${o.bead_name}”` : ""}
                       {o.fulfillment ? ` · ${o.fulfillment}` : ""}
                       {typeof o.total === "number" ? ` · PHP ${o.total}` : ""}
