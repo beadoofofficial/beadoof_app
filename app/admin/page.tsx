@@ -69,14 +69,14 @@ const makeOf = (o: Order) => o.creating_status ?? "";
 
 function payTone(status: string): string {
   if (/^paid$/i.test(status)) return "bg-emerald-500 text-white";
-  if (/proof/i.test(status)) return "bg-sky-500 text-white";
-  return "bg-amber-400 text-[#5a4300]";
+  if (/proof/i.test(status)) return "bg-aqua text-[#08343a]";
+  return "bg-lemon text-[#5a4300]";
 }
 
 function makeTone(value: string): string {
   if (/done/i.test(value)) return "bg-emerald-500 text-white";
-  if (/progress/i.test(value)) return "bg-violet-500 text-white";
-  return "bg-[#c9b8a8] text-white";
+  if (/progress/i.test(value)) return "bg-[#9366d6] text-white";
+  return "bg-cord text-ink";
 }
 
 /* ---------------- small pieces ---------------- */
@@ -96,7 +96,7 @@ function Seg({
   onPick: (v: string) => void;
 }) {
   return (
-    <div className="inline-flex overflow-hidden rounded-full border border-[#e4d3c4] bg-white">
+    <div className="inline-flex overflow-hidden rounded-full border border-cord/60 bg-white">
       {options.map((opt) => {
         const on = opt.value === value;
         return (
@@ -105,7 +105,7 @@ function Seg({
             type="button"
             disabled={disabled}
             className={`cursor-pointer px-2.5 py-1 text-[11px] font-bold whitespace-nowrap transition-colors disabled:opacity-50 ${
-              on ? tone(opt.value) : "text-[#9a8478] hover:bg-[#f6ede2]"
+              on ? tone(opt.value) : "text-shop-muted hover:bg-paper"
             }`}
             onClick={() => !on && onPick(opt.value)}
           >
@@ -155,12 +155,12 @@ function ProofLightbox({
         className="flex max-h-full w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-2 border-b border-[#f1e4d5] px-4 py-3">
+        <div className="flex items-center gap-2 border-b border-cord/40 px-4 py-3">
           <div className="min-w-0">
             <div className="truncate font-bold">
               {order.code} · {order.customer_name}
             </div>
-            <div className="text-xs text-[#9a8478]">
+            <div className="text-xs text-shop-muted">
               PHP {(order.total ?? 0).toLocaleString()} · {order.payment}
               {order.proof_at
                 ? ` · proof sent ${new Date(order.proof_at).toLocaleString()}`
@@ -170,20 +170,20 @@ function ProofLightbox({
           <button
             type="button"
             aria-label="Close"
-            className="ml-auto shrink-0 cursor-pointer px-2 text-2xl leading-none text-[#9a8478] hover:text-[#3b2b22]"
+            className="ml-auto shrink-0 cursor-pointer px-2 text-2xl leading-none text-shop-muted hover:text-ink"
             onClick={onClose}
           >
             ×
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-auto bg-[#f6ede2] p-3">
+        <div className="min-h-0 flex-1 overflow-auto bg-paper p-3">
           {order.proof_url && isPdf(order.proof_url) ? (
             <a
               href={order.proof_url}
               target="_blank"
               rel="noreferrer"
-              className="block rounded-xl bg-white p-8 text-center text-sm font-semibold text-[#5a3a24] underline"
+              className="block rounded-xl bg-white p-8 text-center text-sm font-semibold text-ink underline"
             >
               Open the PDF proof
             </a>
@@ -197,12 +197,12 @@ function ProofLightbox({
           )}
         </div>
 
-        <div className="flex items-center gap-2 border-t border-[#f1e4d5] px-4 py-3">
+        <div className="flex items-center gap-2 border-t border-cord/40 px-4 py-3">
           <a
             href={order.proof_url ?? "#"}
             target="_blank"
             rel="noreferrer"
-            className="text-xs text-[#9a8478] underline"
+            className="text-xs text-shop-muted underline"
           >
             Open full size
           </a>
@@ -330,7 +330,7 @@ export default function AdminOrdersPage() {
 
   const chip = (on: boolean) =>
     `cursor-pointer rounded-full px-3 py-1.5 text-xs font-semibold ${
-      on ? "bg-[#5a3a24] text-white" : "bg-white text-[#5a4438] hover:bg-[#f0e4d6]"
+      on ? "bg-shop-pink text-white" : "bg-white text-ink/80 hover:bg-cord/30"
     }`;
 
   const proofOrder = orders.find((o) => o.id === proofOrderId) ?? null;
@@ -340,12 +340,12 @@ export default function AdminOrdersPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-baseline justify-between flex-wrap gap-2">
-        <h1 className="font-display text-2xl font-semibold text-[#3b2b22]">
+        <h1 className="font-display text-2xl font-semibold text-ink">
           Orders
         </h1>
         <button
           type="button"
-          className="shrink-0 cursor-pointer text-xs text-[#9a8478] underline"
+          className="shrink-0 cursor-pointer text-xs text-shop-muted underline"
           title="The list also refreshes itself every minute"
           onClick={() => refresh()}
         >
@@ -396,10 +396,10 @@ export default function AdminOrdersPage() {
             onClick={apply}
             title="Filter the list"
           >
-            <div className="text-[11px] tracking-wide text-[#9a8478] uppercase">
+            <div className="text-[11px] tracking-wide text-shop-muted uppercase">
               {label}
             </div>
-            <div className="font-display text-xl font-semibold text-[#3b2b22]">
+            <div className="font-display text-xl font-semibold text-ink">
               {value}
             </div>
           </button>
@@ -409,7 +409,7 @@ export default function AdminOrdersPage() {
       {/* filters */}
       <div className="space-y-1.5">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="w-16 text-[11px] font-bold tracking-wide text-[#9a8478] uppercase">
+          <span className="w-16 text-[11px] font-bold tracking-wide text-shop-muted uppercase">
             Payment
           </span>
           {["All", ...PAY_STATUSES].map((s) => (
@@ -422,14 +422,14 @@ export default function AdminOrdersPage() {
             </button>
           ))}
           <input
-            className="ml-auto w-full rounded-full border border-[#e4d3c4] bg-white px-3.5 py-1.5 text-sm sm:w-60"
+            className="ml-auto w-full rounded-full border border-cord/60 bg-white px-3.5 py-1.5 text-sm sm:w-60"
             placeholder="Search code, name, mobile…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="w-16 text-[11px] font-bold tracking-wide text-[#9a8478] uppercase">
+          <span className="w-16 text-[11px] font-bold tracking-wide text-shop-muted uppercase">
             Making
           </span>
           {["All", ...MAKE_SEGMENTS.map((m) => m.label)].map((s) => (
@@ -445,9 +445,9 @@ export default function AdminOrdersPage() {
       </div>
 
       {loading ? (
-        <div className="text-sm text-[#7a6a60]">Loading…</div>
+        <div className="text-sm text-shop-muted">Loading…</div>
       ) : shown.length === 0 ? (
-        <div className="rounded-2xl bg-white p-8 text-center text-sm text-[#7a6a60] shadow-sm">
+        <div className="rounded-2xl bg-white p-8 text-center text-sm text-shop-muted shadow-sm">
           {orders.length === 0
             ? "No orders yet — they show up here as soon as the first one is placed."
             : "Nothing matches these filters."}
@@ -477,38 +477,38 @@ export default function AdminOrdersPage() {
                     title={expanded ? "Hide details" : "Show details"}
                   >
                     <div className="flex items-center gap-2">
-                      <span className="font-display font-semibold text-[#3b2b22]">
+                      <span className="font-display font-semibold text-ink">
                         {o.code ?? "(no code)"}
                       </span>
-                      <span className="text-[11px] text-[#9a8478]">
+                      <span className="text-[11px] text-shop-muted">
                         {shortDate(o.created_at)}
                       </span>
                       <span
-                        className={`ml-auto text-[#9a8478] transition-transform ${expanded ? "rotate-90" : ""}`}
+                        className={`ml-auto text-shop-muted transition-transform ${expanded ? "rotate-90" : ""}`}
                         aria-hidden
                       >
                         ›
                       </span>
                     </div>
-                    <div className="truncate text-[13px] text-[#5a4438]">
+                    <div className="truncate text-[13px] text-ink/80">
                       <span className="font-semibold">{o.customer_name}</span>
                       {piece ? ` · ${piece}` : ""}
                     </div>
                   </button>
 
-                  <span className="font-display text-[15px] font-semibold whitespace-nowrap text-[#5a3a24]">
+                  <span className="font-display text-[15px] font-semibold whitespace-nowrap text-ink">
                     PHP {(o.total ?? 0).toLocaleString()}
                   </span>
 
                   {o.proof_url ? (
                     <button
                       type="button"
-                      className="relative h-11 w-11 shrink-0 cursor-pointer overflow-hidden rounded-lg border-2 border-sky-300 bg-[#f6ede2]"
+                      className="relative h-11 w-11 shrink-0 cursor-pointer overflow-hidden rounded-lg border-2 border-aqua bg-paper"
                       title="View proof of payment"
                       onClick={() => setProofOrderId(o.id)}
                     >
                       {isPdf(o.proof_url) ? (
-                        <span className="grid h-full w-full place-items-center text-[10px] font-bold text-[#5a3a24]">
+                        <span className="grid h-full w-full place-items-center text-[10px] font-bold text-ink">
                           PDF
                         </span>
                       ) : (
@@ -522,7 +522,7 @@ export default function AdminOrdersPage() {
                     </button>
                   ) : (
                     <span
-                      className="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-dashed border-[#e4d3c4] text-[9px] text-[#c9b8a8]"
+                      className="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-dashed border-cord/60 text-[9px] text-cord"
                       title="No proof sent yet"
                     >
                       no proof
@@ -553,36 +553,38 @@ export default function AdminOrdersPage() {
 
                 {/* expanded details */}
                 {expanded && (
-                  <div className="space-y-1.5 border-t border-[#f1e4d5] bg-[#fbf6ef] px-3 py-2.5 text-[13px]">
+                  <div className="space-y-1.5 border-t border-cord/40 bg-paper/60 px-3 py-2.5 text-[13px]">
                     {multi ? (
-                      <ol className="list-none space-y-0.5 text-[#5a4438]">
+                      <ol className="list-none space-y-0.5 text-ink/80">
                         {o.pieces!.map((p, i) => (
                           <li key={i}>
-                            <span className="mr-1 inline-block w-4 text-[11px] text-[#9a8478]">
+                            <span className="mr-1 inline-block w-4 text-[11px] text-shop-muted">
                               {i + 1}.
                             </span>
                             {dotted(
                               p.merch,
                               p.beadName && `“${p.beadName}”`,
                               p.color,
+                              p.design,
                               p.size ?? undefined,
                               p.bead ?? undefined,
                               p.addons.length
                                 ? `+ ${p.addons.join(", ")}`
                                 : undefined,
                             )}
-                            <span className="ml-1 text-[11px] text-[#9a8478]">
+                            <span className="ml-1 text-[11px] text-shop-muted">
                               PHP {p.subtotal.toLocaleString()}
                             </span>
                           </li>
                         ))}
                       </ol>
                     ) : (
-                      <div className="text-[#5a4438]">
+                      <div className="text-ink/80">
                         {dotted(
                           o.merch,
                           o.bead_name && `“${o.bead_name}”`,
                           o.color,
+                          o.charm,
                           o.letter_size,
                           o.bead_mix,
                           (o.addons?.length ?? 0) > 0
@@ -591,7 +593,7 @@ export default function AdminOrdersPage() {
                         )}
                       </div>
                     )}
-                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-[#9a8478]">
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-shop-muted">
                       {o.contact && <span>{o.contact}</span>}
                       {o.customer_email && <span>{o.customer_email}</span>}
                       {o.fulfillment && <span>{o.fulfillment}</span>}
@@ -600,15 +602,15 @@ export default function AdminOrdersPage() {
                       <span>{new Date(o.created_at).toLocaleString()}</span>
                     </div>
                     {o.notes && (
-                      <div className="text-xs text-[#7a6a60] italic">
+                      <div className="text-xs text-shop-muted italic">
                         “{o.notes}”
                       </div>
                     )}
-                    <label className="flex items-center gap-1.5 text-xs text-[#9a8478]">
+                    <label className="flex items-center gap-1.5 text-xs text-shop-muted">
                       Deliver
                       <input
                         type="date"
-                        className="rounded-lg border border-[#e4d3c4] bg-white px-2 py-1 text-xs text-[#3b2b22]"
+                        className="rounded-lg border border-cord/60 bg-white px-2 py-1 text-xs text-ink"
                         value={o.delivery_date ?? ""}
                         disabled={saving}
                         onChange={(e) =>

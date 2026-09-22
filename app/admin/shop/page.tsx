@@ -164,15 +164,15 @@ export default function ShopAdminPage() {
     .sort((a, b) => a.sort - b.sort);
 
   const inputCls =
-    "border border-[#e4d3c4] rounded px-2 py-1.5 text-sm w-full bg-white";
+    "border border-cord/60 rounded px-2 py-1.5 text-sm w-full bg-white";
 
   return (
     <div className="space-y-4">
         <div className="flex items-baseline justify-between flex-wrap gap-2">
-          <h1 className="font-[family-name:var(--font-fredoka)] text-2xl font-semibold text-[#3b2b22]">
+          <h1 className="font-[family-name:var(--font-fredoka)] text-2xl font-semibold text-ink">
             Shop editor
           </h1>
-          <span className="text-xs text-[#9a8478]">
+          <span className="text-xs text-shop-muted">
             Each tab is one step of the order form. Changes show straight away.
           </span>
         </div>
@@ -183,7 +183,7 @@ export default function ShopAdminPage() {
           </div>
         )}
         {loading ? (
-          <div className="text-sm text-[#7a6a60]">Loading…</div>
+          <div className="text-sm text-shop-muted">Loading…</div>
         ) : (
           <>
             {/* one pill per form step, plus the settings pill */}
@@ -193,8 +193,8 @@ export default function ShopAdminPage() {
                   key={c}
                   className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
                     !showSettings && tab === c
-                      ? "bg-[#5a3a24] text-white shadow-sm"
-                      : "bg-white text-[#5a4438] hover:bg-[#f0e4d6]"
+                      ? "bg-shop-pink text-white shadow-sm"
+                      : "bg-white text-ink/80 hover:bg-cord/30"
                   }`}
                   onClick={() => {
                     setShowSettings(false);
@@ -207,8 +207,8 @@ export default function ShopAdminPage() {
               <button
                 className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
                   showSettings
-                    ? "bg-[#5a3a24] text-white shadow-sm"
-                    : "bg-white text-[#5a4438] hover:bg-[#f0e4d6]"
+                    ? "bg-shop-pink text-white shadow-sm"
+                    : "bg-white text-ink/80 hover:bg-cord/30"
                 }`}
                 onClick={() => setShowSettings(true)}
               >
@@ -218,7 +218,7 @@ export default function ShopAdminPage() {
 
             {showSettings ? (
           <div className="bg-white rounded-2xl shadow-sm p-4 space-y-3">
-            <p className="text-xs text-[#7a6a60]">
+            <p className="text-xs text-shop-muted">
               Shop name, discount, GCash details, open/closed. Changes show on
               the form straight away.
             </p>
@@ -233,11 +233,11 @@ export default function ShopAdminPage() {
                   );
                 return (
                   <label key={s.key} className="block">
-                    <span className="text-xs font-semibold text-[#5a4438]">
+                    <span className="text-xs font-semibold text-ink/80">
                       {s.label || s.key}
                     </span>
                     {s.help && (
-                      <span className="block text-[11px] text-[#9a8478]">
+                      <span className="block text-[11px] text-shop-muted">
                         {s.help}
                       </span>
                     )}
@@ -262,7 +262,7 @@ export default function ShopAdminPage() {
               })}
             </div>
             <button
-              className="bg-[#5a3a24] text-white px-4 py-2 rounded-full text-sm font-semibold disabled:opacity-50"
+              className="bg-shop-pink text-white px-4 py-2 rounded-full text-sm font-semibold disabled:opacity-50"
               disabled={savingSettings || !settings.some((s) => s.dirty)}
               onClick={saveSettings}
             >
@@ -272,7 +272,7 @@ export default function ShopAdminPage() {
         ) : (
           <>
             <div className="bg-white rounded-2xl shadow-sm p-4 space-y-3">
-              <p className="text-xs text-[#7a6a60]">
+              <p className="text-xs text-shop-muted">
                 One row = one tile on that step of the form. Untick Active to
                 hide a row without deleting it. Prices are plain numbers (50,
                 not PHP 50).
@@ -283,7 +283,7 @@ export default function ShopAdminPage() {
               </p>
 
               {tabRows.length === 0 && (
-                <div className="text-sm text-[#7a6a60]">
+                <div className="text-sm text-shop-muted">
                   Nothing here yet — this step of the form will show an error
                   until you add a row.
                 </div>
@@ -292,13 +292,13 @@ export default function ShopAdminPage() {
               {tabRows.map((row, i) => (
                 <div
                   key={row.id ?? `new-${i}`}
-                  className="border border-[#f1e4d5] rounded-xl p-3 space-y-2"
+                  className="border border-cord/40 rounded-xl p-3 space-y-2"
                 >
                   {/* flex-wrap so narrow screens stack fields instead of
                       pushing them past the card edge */}
                   <div className="flex flex-wrap items-end gap-2">
                     <label className="grow basis-40 min-w-0">
-                      <span className="text-[11px] text-[#9a8478]">Name</span>
+                      <span className="text-[11px] text-shop-muted">Name</span>
                       <input
                         className={inputCls}
                         value={row.value}
@@ -308,7 +308,7 @@ export default function ShopAdminPage() {
                       />
                     </label>
                     <label className="w-24 shrink-0">
-                      <span className="text-[11px] text-[#9a8478]">Price</span>
+                      <span className="text-[11px] text-shop-muted">Price</span>
                       <input
                         className={inputCls}
                         type="number"
@@ -319,7 +319,7 @@ export default function ShopAdminPage() {
                       />
                     </label>
                     <label className="w-20 shrink-0">
-                      <span className="text-[11px] text-[#9a8478]">Sort</span>
+                      <span className="text-[11px] text-shop-muted">Sort</span>
                       <input
                         className={inputCls}
                         type="number"
@@ -331,7 +331,7 @@ export default function ShopAdminPage() {
                     </label>
                     {STYLE_LABEL[tab] && (
                       <label className="grow basis-48 min-w-0">
-                        <span className="text-[11px] text-[#9a8478]">
+                        <span className="text-[11px] text-shop-muted">
                           {STYLE_LABEL[tab]}
                         </span>
                         <div className="flex items-center gap-1.5 min-w-0">
@@ -355,7 +355,7 @@ export default function ShopAdminPage() {
                   </div>
 
                   <label className="block">
-                    <span className="text-[11px] text-[#9a8478]">
+                    <span className="text-[11px] text-shop-muted">
                       Description shown to customer
                     </span>
                     <input
@@ -367,7 +367,7 @@ export default function ShopAdminPage() {
 
                   {tab === "PAYMENT" && (
                     <label className="block">
-                      <span className="text-[11px] text-[#9a8478]">
+                      <span className="text-[11px] text-shop-muted">
                         QR code (image URL or QR text, empty for none)
                       </span>
                       <input
@@ -414,7 +414,7 @@ export default function ShopAdminPage() {
                       Delete
                     </button>
                     <button
-                      className="text-sm font-semibold text-white bg-[#8a5a3b] px-4 py-1.5 rounded-full disabled:opacity-40"
+                      className="text-sm font-semibold text-white bg-shop-pink px-4 py-1.5 rounded-full disabled:opacity-40"
                       disabled={!row.dirty || row.saving || !row.value.trim()}
                       onClick={() => saveRow(row)}
                     >
@@ -425,7 +425,7 @@ export default function ShopAdminPage() {
               ))}
 
               <button
-                className="text-sm font-semibold text-[#5a3a24] underline"
+                className="text-sm font-semibold text-ink underline"
                 onClick={addRow}
               >
                 + Add a row

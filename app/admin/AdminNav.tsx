@@ -22,8 +22,8 @@ export default function AdminNav() {
             aria-current={active ? "page" : undefined}
             className={`shrink-0 px-3.5 py-1.5 rounded-full text-sm font-semibold transition-colors ${
               active
-                ? "bg-[#5a3a24] text-white shadow-sm"
-                : "text-[#5a4438] hover:bg-[#f0e4d6]"
+                ? "bg-shop-pink text-white shadow-sm"
+                : "text-ink/80 hover:bg-cord/30"
             }`}
           >
             <span aria-hidden className="mr-1">
