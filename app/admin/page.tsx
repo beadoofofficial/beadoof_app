@@ -345,10 +345,11 @@ export default function AdminOrdersPage() {
         </h1>
         <button
           type="button"
-          className="cursor-pointer text-xs text-[#9a8478] underline"
+          className="shrink-0 cursor-pointer text-xs text-[#9a8478] underline"
+          title="The list also refreshes itself every minute"
           onClick={() => refresh()}
         >
-          Refresh (auto every minute)
+          ↻ Refresh
         </button>
       </div>
 
@@ -528,7 +529,8 @@ export default function AdminOrdersPage() {
                     </span>
                   )}
 
-                  <div className="flex shrink-0 items-center gap-1.5">
+                  {/* the two segments wrap independently on narrow screens */}
+                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                     <Seg
                       options={PAY_STATUSES.map((s) => ({
                         label: PAY_SHORT[s],

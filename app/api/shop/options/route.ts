@@ -4,7 +4,7 @@ import { createClient } from "@/utils/supabase/server";
 import { CATEGORIES, type Category, type ShopOption } from "@/lib/shop";
 
 // Admin catalog editor API — the replacement for editing the Sheet tabs.
-// Same open prototype posture as /api/inventory; tighten before production.
+// Open prototype posture; tighten before production.
 
 const TABLE = "shop_options";
 

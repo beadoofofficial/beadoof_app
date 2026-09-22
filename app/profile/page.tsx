@@ -80,10 +80,10 @@ export default async function ProfilePage() {
           </Link>
           {isAdmin && (
             <Link
-              href="/admin/inventory"
+              href="/admin"
               className="block w-full text-center bg-[#5a3a24] text-white py-2 rounded-lg text-sm font-semibold"
             >
-              Admin: manage inventory →
+              Admin: manage orders →
             </Link>
           )}
         </section>

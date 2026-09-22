@@ -16,23 +16,27 @@ export default function AdminLayout({
   return (
     <div className="min-h-screen bg-[#faf3ea] text-foreground">
       <header className="sticky top-0 z-20 bg-[#faf3ea]/95 backdrop-blur border-b border-[#eadbc9]">
-        <div className="max-w-5xl mx-auto px-4 md:px-6 py-3 flex items-center gap-4 flex-wrap">
+        {/* phones: brand + view-shop on one line, tabs on their own scrollable
+            line; from md everything sits on a single row */}
+        <div className="max-w-5xl mx-auto px-4 md:px-6 py-2.5 md:py-3 flex items-center gap-x-4 gap-y-2 flex-wrap">
           <Link
             href="/admin"
-            className="font-[family-name:var(--font-fredoka)] font-semibold text-lg tracking-wide text-[#5a3a24]"
+            className="order-1 shrink-0 font-[family-name:var(--font-fredoka)] font-semibold text-lg tracking-wide text-[#5a3a24]"
           >
             BEADOOF{" "}
             <span className="text-[11px] font-normal uppercase tracking-widest text-[#9a8478]">
               admin
             </span>
           </Link>
-          <AdminNav />
           <Link
             href="/"
-            className="ml-auto shrink-0 text-sm text-[#7a6a60] underline underline-offset-2 hover:text-[#5a3a24]"
+            className="order-2 md:order-3 ml-auto shrink-0 text-sm text-[#7a6a60] underline underline-offset-2 hover:text-[#5a3a24]"
           >
             View shop →
           </Link>
+          <div className="order-3 md:order-2 w-full min-w-0 md:w-auto md:flex-1">
+            <AdminNav />
+          </div>
         </div>
       </header>
       <main className="max-w-5xl mx-auto px-4 md:px-6 py-5">{children}</main>
