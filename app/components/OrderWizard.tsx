@@ -748,7 +748,8 @@ const STEPS: Step[] = [
 /** Index of the first per-piece step (merch) — same in every flow variant. */
 const FIRST_PIECE_STEP = 2;
 
-const MAX_PIECES = 10;
+// keep in step with MAX_PIECES in app/api/order/route.ts
+const MAX_PIECES = 100;
 
 /** A piece as the server echoes it back on the receipt. */
 type ReceiptPiece = {
@@ -1246,7 +1247,7 @@ export default function OrderWizard({
             value={countDraft ?? String(n)}
             onFocus={(e) => e.target.select()}
             onChange={(e) =>
-              setCountDraft(e.target.value.replace(/\D/g, "").slice(0, 2))
+              setCountDraft(e.target.value.replace(/\D/g, "").slice(0, 3))
             }
             onBlur={commit}
             onKeyDown={(e) => {

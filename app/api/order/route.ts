@@ -19,7 +19,7 @@ import {
 // several pieces (same customer, one code). Every choice is re-validated
 // against the live catalog and re-priced server-side.
 
-const MAX_PIECES = 10;
+const MAX_PIECES = 100;
 
 type OrderBody = {
   fulfillment?: string;
@@ -55,7 +55,9 @@ function requireOption(
 ) {
   const o = findOpt(options, cat, value);
   if (!o || !o.active) {
-    throw new Error(`That ${label} isn't available any more. Pick another one.`);
+    throw new Error(
+      `That ${label} isn't available any more. Pick another one.`,
+    );
   }
   return o;
 }
@@ -83,7 +85,9 @@ function validatePiece(
   if (!plain) {
     if (!beadName) throw new Error(`Type the name we should bead${which}.`);
     if (beadName.length > settings.maxNameLength) {
-      throw new Error(`Names can be up to ${settings.maxNameLength} characters.`);
+      throw new Error(
+        `Names can be up to ${settings.maxNameLength} characters.`,
+      );
     }
   }
 
@@ -162,12 +166,20 @@ export async function POST(req: Request) {
       body.fulfillment,
       "delivery method",
     );
-    const payment = requireOption(options, "PAYMENT", body.payment, "payment method");
+    const payment = requireOption(
+      options,
+      "PAYMENT",
+      body.payment,
+      "payment method",
+    );
 
     const rawPieces = Array.isArray(body.pieces) ? body.pieces : [];
-    if (rawPieces.length === 0) throw new Error("Add at least one piece first.");
+    if (rawPieces.length === 0)
+      throw new Error("Add at least one piece first.");
     if (rawPieces.length > MAX_PIECES) {
-      throw new Error(`Up to ${MAX_PIECES} pieces per order — message us for bigger batches.`);
+      throw new Error(
+        `Up to ${MAX_PIECES} pieces per order — message us for bigger batches.`,
+      );
     }
     const pieces = rawPieces.map((p, i) =>
       validatePiece(
@@ -178,7 +190,9 @@ export async function POST(req: Request) {
       ),
     );
 
-    const customerName = String(body.customerName ?? "").trim().replace(/\s+/g, " ");
+    const customerName = String(body.customerName ?? "")
+      .trim()
+      .replace(/\s+/g, " ");
     if (customerName.length < 2) {
       throw new Error("Add the name we should look for when you collect.");
     }
@@ -190,10 +204,14 @@ export async function POST(req: Request) {
 
     const isCash = /cash/i.test(payment.value) && !/gcash/i.test(payment.value);
     if (isCash && !/pick/i.test(fulfillment.value)) {
-      throw new Error("Cash works for pick up only. Choose GCash, or switch to pick up.");
+      throw new Error(
+        "Cash works for pick up only. Choose GCash, or switch to pick up.",
+      );
     }
 
-    const notes = String(body.notes ?? "").trim().slice(0, 300);
+    const notes = String(body.notes ?? "")
+      .trim()
+      .slice(0, 300);
 
     const subtotal = Math.round(
       fulfillment.price + pieces.reduce((s, p) => s + p.subtotal, 0),
@@ -314,6 +332,8 @@ export async function POST(req: Request) {
       pieces,
     });
   } catch (e) {
-    return fail(e instanceof Error ? e.message : "That did not save. Try again.");
+    return fail(
+      e instanceof Error ? e.message : "That did not save. Try again.",
+    );
   }
 }

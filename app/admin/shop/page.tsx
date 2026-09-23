@@ -6,7 +6,15 @@
 import { useEffect, useState } from "react";
 import { CATEGORIES, type Category, type ShopOption } from "@/lib/shop";
 
-type Row = ShopOption & { id?: string; dirty?: boolean; saving?: boolean };
+// _key is a stable client-side identity: rows must never be matched by object
+// reference, because every state update replaces the object (a save that set
+// saving:true would then never find its row again to clear it).
+type Row = ShopOption & {
+  id?: string;
+  _key: string;
+  dirty?: boolean;
+  saving?: boolean;
+};
 type Setting = {
   key: string;
   value: string;
@@ -59,7 +67,12 @@ export default function ShopAdminPage() {
         if (!optRes.ok) throw new Error(opts.error || "options failed");
         if (!setRes.ok) throw new Error(sets.error || "settings failed");
         if (cancelled) return;
-        setRows(opts as Row[]);
+        setRows(
+          (opts as ShopOption[]).map((o) => ({
+            ...o,
+            _key: o.id ?? crypto.randomUUID(),
+          })),
+        );
         setSettings(sets as Setting[]);
       })
       .catch((e: unknown) => {
@@ -76,12 +89,14 @@ export default function ShopAdminPage() {
 
   function patchRow(row: Row, patch: Partial<Row>) {
     setRows((rs) =>
-      rs.map((r) => (r === row ? { ...r, ...patch, dirty: true } : r)),
+      rs.map((r) => (r._key === row._key ? { ...r, ...patch, dirty: true } : r)),
     );
   }
 
   async function saveRow(row: Row) {
-    setRows((rs) => rs.map((r) => (r === row ? { ...r, saving: true } : r)));
+    setRows((rs) =>
+      rs.map((r) => (r._key === row._key ? { ...r, saving: true } : r)),
+    );
     try {
       const res = await fetch("/api/shop/options", {
         method: "POST",
@@ -92,18 +107,27 @@ export default function ShopAdminPage() {
       if (!res.ok) throw new Error(data.error || "save failed");
       setRows((rs) =>
         rs.map((r) =>
-          r === row ? { ...(data as Row), dirty: false, saving: false } : r,
+          r._key === row._key
+            ? {
+                ...(data as ShopOption),
+                _key: row._key,
+                dirty: false,
+                saving: false,
+              }
+            : r,
         ),
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed.");
-      setRows((rs) => rs.map((r) => (r === row ? { ...r, saving: false } : r)));
+      setRows((rs) =>
+        rs.map((r) => (r._key === row._key ? { ...r, saving: false } : r)),
+      );
     }
   }
 
   async function deleteRow(row: Row) {
     if (!row.id) {
-      setRows((rs) => rs.filter((r) => r !== row));
+      setRows((rs) => rs.filter((r) => r._key !== row._key));
       return;
     }
     if (!confirm(`Delete "${row.value}"? Unticking Active hides it instead.`))
@@ -111,7 +135,7 @@ export default function ShopAdminPage() {
     const res = await fetch(`/api/shop/options?id=${row.id}`, {
       method: "DELETE",
     });
-    if (res.ok) setRows((rs) => rs.filter((r) => r !== row));
+    if (res.ok) setRows((rs) => rs.filter((r) => r._key !== row._key));
     else setError("Delete failed.");
   }
 
@@ -132,6 +156,7 @@ export default function ShopAdminPage() {
         qr: null,
         plain: false,
         sort: maxSort + 1,
+        _key: crypto.randomUUID(),
         dirty: true,
       },
     ]);
@@ -285,9 +310,9 @@ export default function ShopAdminPage() {
                 </div>
               )}
 
-              {tabRows.map((row, i) => (
+              {tabRows.map((row) => (
                 <div
-                  key={row.id ?? `new-${i}`}
+                  key={row._key}
                   className="border border-cord/40 rounded-xl p-3 space-y-2"
                 >
                   {/* flex-wrap so narrow screens stack fields instead of

@@ -1,8 +1,9 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: #faf6f1;
-  --color-foreground: #3b2b22;
+  /* the whole app sits on the shop's lavender paper + ink */
+  --color-background: #f1ecf9;
+  --color-foreground: #241c33;
   --breakpoint-xs: 22rem;
 
   /* ---- shop (order wizard) palette, ported from the Apps Script theme ---- */
@@ -50,5 +51,16 @@ body {
   input[type="checkbox"],
   input[type="radio"] {
     accent-color: var(--color-shop-pink);
+  }
+}
+
+/* hover styles only on devices that can actually hover — on touchscreens a
+   tap otherwise applies :hover and it sticks until the next tap, leaving
+   buttons and chips looking pressed */
+@custom-variant hover {
+  @media (hover: hover) {
+    &:hover {
+      @slot;
+    }
   }
 }
