@@ -82,7 +82,8 @@ const previewCls =
   "mb-4 grid min-h-[74px] place-items-center rounded-[18px] bg-white px-2 py-2.5";
 const summaryRowCls =
   "flex justify-between gap-3.5 border-b border-dashed border-cord/90 px-0.5 py-2.5 text-[15px]";
-const qrImgCls = "mx-auto block h-auto w-full max-w-[260px] rounded-xl bg-white";
+const qrImgCls =
+  "mx-auto block h-auto w-full max-w-[260px] rounded-xl bg-white";
 const qrNoteCls = "m-0 text-sm text-shop-muted";
 const receiptPayCls =
   "mt-4 rounded-xl bg-[#effbfc] px-3.5 py-3 text-left text-[14.5px]";
@@ -175,7 +176,13 @@ function BeadLine({
 }
 
 /** A short strand with the charm in the middle, for items with no name on them. */
-function PlainStrand({ color, charm }: { color?: string | null; charm?: string }) {
+function PlainStrand({
+  color,
+  charm,
+}: {
+  color?: string | null;
+  charm?: string;
+}) {
   return (
     <div className="relative flex flex-wrap justify-center gap-[5px] py-3 before:absolute before:top-1/2 before:left-[6%] before:right-[6%] before:z-0 before:h-[3px] before:rounded-[3px] before:bg-cord before:content-['']">
       {Array.from({ length: 4 }, (_, i) => (
@@ -190,7 +197,10 @@ function PlainStrand({ color, charm }: { color?: string | null; charm?: string }
 }
 
 function BeadRing({ colors }: { colors: string }) {
-  const list = colors.split(",").map((c) => c.trim()).filter(Boolean);
+  const list = colors
+    .split(",")
+    .map((c) => c.trim())
+    .filter(Boolean);
   const palette = list.length ? list : ["#C5B8DF"];
   const dots = Array.from({ length: 16 }, (_, i) => {
     const a = (i / 16) * Math.PI * 2;
@@ -215,7 +225,9 @@ function BeadRing({ colors }: { colors: string }) {
 /* ------------------------------------------------ payment QR ------- */
 
 function looksLikeImage(qr: string): boolean {
-  return /^https?:\/\//i.test(qr) || qr.startsWith("data:") || qr.startsWith("/");
+  return (
+    /^https?:\/\//i.test(qr) || qr.startsWith("data:") || qr.startsWith("/")
+  );
 }
 
 /** Draws a QR from its text via QRious (loaded from CDN by the page).
@@ -271,7 +283,11 @@ function QrText({ text }: { text: string }) {
 
   return (
     <>
-      <canvas ref={canvasRef} className={qrImgCls} style={{ display: "none" }} />
+      <canvas
+        ref={canvasRef}
+        className={qrImgCls}
+        style={{ display: "none" }}
+      />
       <p
         ref={fallbackRef}
         className="m-0 rounded-[10px] bg-paper p-3 text-left font-mono text-xs break-all"
@@ -595,7 +611,9 @@ function Sidecar({
         ) : (
           groups.map((g, gi) => {
             if (g.title === null) {
-              return <BreakdownList key={`g-${gi}`} lines={g.lines} money={money} />;
+              return (
+                <BreakdownList key={`g-${gi}`} lines={g.lines} money={money} />
+              );
             }
             const header = (
               <div className="flex items-baseline justify-between pt-2 pb-0.5">
@@ -696,11 +714,32 @@ type StepType =
 
 type OrderFields = {
   fulfillment?: string;
+  /** Pre-orders only: the date the customer needs the order by (YYYY-MM-DD). */
+  deliveryDate?: string;
   customerName?: string;
   contact?: string;
   notes?: string;
   payment?: string;
 };
+
+/** Tomorrow as YYYY-MM-DD — the earliest date a pre-order can ask for. */
+function minDeliveryDate(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function formatDeliveryDate(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`);
+  return isNaN(d.getTime())
+    ? iso
+    : d.toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+}
 
 /** A piece being built, plus the transient yes/no answer of the add-ons step. */
 type PieceDraft = PieceSelections & { wantsAddons: boolean | null };
@@ -714,35 +753,98 @@ type Step = {
   cols?: 2 | 3;
   /** Belongs to one piece (the carousel shows on these steps). */
   perPiece?: boolean;
-  /** Only applies to items that carry a beaded name — drops out for earrings etc. */
-  needsName?: boolean;
   title: string;
   hint: string;
 };
 
 const STEPS: Step[] = [
-  { key: "fulfillment", cat: "FULFILLMENT", type: "single", cols: 2,
-    title: "Pick up or pre order?", hint: "Pick up means you collect and can pay cash." },
-  { key: "pieceCount", type: "count",
-    title: "How many pieces?", hint: "Each piece gets its own name, colour and design." },
-  { key: "merch", cat: "MERCH", type: "single", cols: 2, perPiece: true,
-    title: "What are we making?", hint: "Greyed out items are coming soon." },
-  { key: "color", cat: "COLOR", type: "color", cols: 3, perPiece: true,
-    title: "Pick your colour", hint: "" /* set per order below */ },
-  { key: "beadName", type: "name", perPiece: true, needsName: true,
-    title: "Type the name", hint: "Spelling here is exactly how we bead it." },
-  { key: "design", cat: "DESIGN", type: "design", cols: 3, perPiece: true,
-    title: "Main design", hint: "The charm that sits beside the name." },
-  { key: "size", cat: "SIZE", type: "single", cols: 2, perPiece: true, needsName: true,
-    title: "Letter size", hint: "Long names sit better in small letters." },
-  { key: "bead", cat: "BEAD", type: "bead", cols: 3, perPiece: true, needsName: true,
-    title: "Bead style", hint: "The mix used for the rest of the strand." },
-  { key: "addons", cat: "ADDON", type: "addons", perPiece: true,
-    title: "Any add-ons?", hint: "Skip this if you want it plain." },
-  { key: "customerName", type: "details",
-    title: "Who is this for?", hint: "So we know who to hand it to." },
-  { key: "payment", cat: "PAYMENT", type: "payment",
-    title: "How will you pay?", hint: "" },
+  {
+    key: "fulfillment",
+    cat: "FULFILLMENT",
+    type: "single",
+    cols: 2,
+    title: "Pick up or pre order?",
+    hint: "Pick up means you collect and can pay cash.",
+  },
+  {
+    key: "pieceCount",
+    type: "count",
+    title: "How many pieces?",
+    hint: "Each piece gets its own name, colour and design.",
+  },
+  {
+    key: "merch",
+    cat: "MERCH",
+    type: "single",
+    cols: 2,
+    perPiece: true,
+    title: "What are we making?",
+    hint: "Greyed out items are coming soon.",
+  },
+  {
+    key: "color",
+    cat: "COLOR",
+    type: "color",
+    cols: 3,
+    perPiece: true,
+    title: "Pick your colour",
+    hint: "" /* set per order below */,
+  },
+  {
+    key: "beadName",
+    type: "name",
+    perPiece: true,
+    title: "Type the name",
+    hint: "Spelling here is exactly how we bead it. Leave it empty for plain beads with no name.",
+  },
+  {
+    key: "design",
+    cat: "DESIGN",
+    type: "design",
+    cols: 3,
+    perPiece: true,
+    title: "Main design",
+    hint: "The charm that sits beside the name.",
+  },
+  {
+    key: "size",
+    cat: "SIZE",
+    type: "single",
+    cols: 2,
+    perPiece: true,
+    title: "Letter size",
+    hint: "Long names sit better in small letters.",
+  },
+  {
+    key: "bead",
+    cat: "BEAD",
+    type: "bead",
+    cols: 3,
+    perPiece: true,
+    title: "Bead style",
+    hint: "The mix used for the rest of the strand.",
+  },
+  {
+    key: "addons",
+    cat: "ADDON",
+    type: "addons",
+    perPiece: true,
+    title: "Any add-ons?",
+    hint: "Skip this if you want it plain.",
+  },
+  {
+    key: "customerName",
+    type: "details",
+    title: "Who is this for?",
+    hint: "So we know who to hand it to.",
+  },
+  {
+    key: "payment",
+    cat: "PAYMENT",
+    type: "payment",
+    title: "How will you pay?",
+    hint: "",
+  },
 ];
 
 /** Index of the first per-piece step (merch) — same in every flow variant. */
@@ -829,17 +931,26 @@ export default function OrderWizard({
   useEffect(() => {
     chipStripRef.current
       ?.querySelector('[aria-current="true"]')
-      ?.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
+      ?.scrollIntoView({
+        block: "nearest",
+        inline: "center",
+        behavior: "smooth",
+      });
   }, [active, view, stepIndex]);
 
   // which side of the chip strip has more chips hidden off-screen
-  const [chipOverflow, setChipOverflow] = useState({ left: false, right: false });
+  const [chipOverflow, setChipOverflow] = useState({
+    left: false,
+    right: false,
+  });
   const chipNudged = useRef(false);
   const updateChipOverflow = useCallback(() => {
     const el = chipStripRef.current;
     const left = !!el && el.scrollLeft > 2;
     const right = !!el && el.scrollLeft + el.clientWidth < el.scrollWidth - 2;
-    setChipOverflow((s) => (s.left === left && s.right === right ? s : { left, right }));
+    setChipOverflow((s) =>
+      s.left === left && s.right === right ? s : { left, right },
+    );
   }, []);
   useEffect(() => {
     // measured in a frame callback (never synchronously in the effect body)
@@ -867,41 +978,58 @@ export default function OrderWizard({
   const charm = findOpt(options, "DESIGN", piece.design)?.style ?? "";
   const colorHex = piece.color ? colorHexOf(options, piece.color) : null;
 
+  /** The steps this particular piece walks through: plain items skip the
+      name/size/bead steps entirely; a skipped (empty) name drops just the
+      letter-size step — no letters, nothing to size. */
+  function flowOf(p: PieceDraft): Step[] {
+    const plainP = isPlainMerch(options, p.merch);
+    const named = !!p.beadName?.trim();
+    return STEPS.filter((s) => {
+      if (s.key === "beadName" || s.key === "bead") return !plainP;
+      if (s.key === "size") return !plainP && named;
+      return true;
+    });
+  }
+
   // Items ticked "No beaded name" (earrings, charms) skip three steps.
   const plain = isPlainMerch(options, piece.merch);
-  const flow = STEPS.filter((s) => !(s.needsName && plain));
+  const flow = flowOf(piece);
   const step = flow[Math.min(stepIndex, flow.length - 1)];
 
   /* ---------------- pieces ---------------- */
 
   function patchPiece(index: number, patch: Partial<PieceDraft>) {
-    setPieceList((ps) => ps.map((p, i) => (i === index ? { ...p, ...patch } : p)));
+    setPieceList((ps) =>
+      ps.map((p, i) => (i === index ? { ...p, ...patch } : p)),
+    );
   }
 
-  /** All choices made, add-ons question answered. */
+  /** All choices made, add-ons question answered. The name is optional;
+      a named piece additionally needs its letter size. */
   function pieceReady(p: PieceDraft): boolean {
     if (!p.merch || !p.color || !p.design) return false;
     if (!isPlainMerch(options, p.merch)) {
-      if (!p.beadName?.trim() || !p.size || !p.bead) return false;
+      if (!p.bead) return false;
+      if (p.beadName?.trim() && !p.size) return false;
     }
-    return p.wantsAddons === false || (p.wantsAddons === true && p.addons.length > 0);
+    return (
+      p.wantsAddons === false || (p.wantsAddons === true && p.addons.length > 0)
+    );
   }
 
   /** Where to drop the customer when switching to this piece. */
   function firstIncompleteStep(p: PieceDraft): number {
-    const pFlow = STEPS.filter(
-      (s) => !(s.needsName && isPlainMerch(options, p.merch)),
-    );
+    const pFlow = flowOf(p);
     for (let i = FIRST_PIECE_STEP; i < pFlow.length; i++) {
       const s = pFlow[i];
       if (!s.perPiece) break;
-      if (s.type === "name" && !p.beadName?.trim()) return i;
+      if (s.type === "name") continue; // optional
       if (s.type === "addons") {
         if (p.wantsAddons === null || (p.wantsAddons && p.addons.length === 0))
           return i;
         continue;
       }
-      if (s.type !== "name" && !p[s.key as keyof PieceSelections]) return i;
+      if (!p[s.key as keyof PieceSelections]) return i;
     }
     return FIRST_PIECE_STEP;
   }
@@ -919,16 +1047,15 @@ export default function OrderWizard({
     }
   }
 
-  function flowOf(p: PieceDraft): Step[] {
-    return STEPS.filter((s) => !(s.needsName && isPlainMerch(options, p.merch)));
-  }
-
   function setPieceCount(n: number) {
     const count = Math.max(1, Math.min(MAX_PIECES, n));
     setPieceList((ps) => {
       if (count === ps.length) return ps;
       if (count > ps.length) {
-        return [...ps, ...Array.from({ length: count - ps.length }, emptyPiece)];
+        return [
+          ...ps,
+          ...Array.from({ length: count - ps.length }, emptyPiece),
+        ];
       }
       return ps.slice(0, count); // lowering the count drops the last pieces
     });
@@ -938,7 +1065,9 @@ export default function OrderWizard({
   function removePiece(index: number) {
     if (pieceList.length <= 1) return;
     setPieceList((ps) => ps.filter((_, i) => i !== index));
-    setActive((a) => Math.min(a >= index ? Math.max(a - 1, 0) : a, pieceList.length - 2));
+    setActive((a) =>
+      Math.min(a >= index ? Math.max(a - 1, 0) : a, pieceList.length - 2),
+    );
   }
 
   const allReady = pieceList.every(pieceReady);
@@ -954,7 +1083,7 @@ export default function OrderWizard({
 
   function stepIsComplete(): boolean {
     if (step.type === "count") return true;
-    if (step.type === "name") return !!piece.beadName?.trim();
+    if (step.type === "name") return true; // the name is optional
     if (step.type === "addons") {
       return (
         piece.wantsAddons === false ||
@@ -967,16 +1096,27 @@ export default function OrderWizard({
         String(order.contact ?? "").replace(/\D/g, "").length >= 7
       );
     }
-    if (step.key === "fulfillment" || step.key === "payment") {
-      return !!order[step.key as keyof OrderFields];
+    if (step.key === "fulfillment") {
+      if (!order.fulfillment) return false;
+      // pre-orders also need the date the customer wants it by
+      return /pick/i.test(order.fulfillment) || !!order.deliveryDate;
+    }
+    if (step.key === "payment") {
+      return !!order.payment;
     }
     return !!piece[step.key as keyof PieceSelections];
   }
 
   function nudge(): string {
-    if (step.type === "name") return "Type the name first.";
     if (step.type === "details") return "Add your name and a mobile number.";
     if (step.type === "addons") return "Choose yes and pick one, or choose no.";
+    if (
+      step.key === "fulfillment" &&
+      order.fulfillment &&
+      !/pick/i.test(order.fulfillment)
+    ) {
+      return "Pick the date you need it by.";
+    }
     return "Pick one to keep going.";
   }
 
@@ -1042,6 +1182,7 @@ export default function OrderWizard({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           fulfillment: order.fulfillment,
+          deliveryDate: order.deliveryDate,
           customerName: order.customerName,
           contact: order.contact,
           notes: order.notes,
@@ -1124,6 +1265,10 @@ export default function OrderWizard({
       ) {
         nextOrder.payment = "";
       }
+      // Pick up needs no requested date — drop one left over from pre-order.
+      if (key === "fulfillment" && /pick/i.test(value)) {
+        nextOrder.deliveryDate = undefined;
+      }
       return nextOrder;
     });
   }
@@ -1201,6 +1346,39 @@ export default function OrderWizard({
       <div className={step.cols === 3 ? grid3Cls : gridCls}>
         {list.map(renderTile)}
       </div>
+    );
+  }
+
+  function FulfillmentStep() {
+    const preorder = !!order.fulfillment && !/pick/i.test(order.fulfillment);
+    return (
+      <>
+        {TileStep()}
+        {preorder && (
+          <div className="mt-4">
+            <label className={fieldCls}>
+              <span className={fieldLabelCls}>When do you need it by?</span>
+              <input
+                type="date"
+                className={inputCls}
+                min={minDeliveryDate()}
+                value={order.deliveryDate ?? ""}
+                onChange={(e) => {
+                  setStepError(null);
+                  setOrder((o) => ({
+                    ...o,
+                    deliveryDate: e.target.value || undefined,
+                  }));
+                }}
+              />
+            </label>
+            <p className="mx-0.5 -mt-2 text-[12.5px] text-shop-muted">
+              {settings.preorderNote ||
+                "We'll do our best to have it ready by then."}
+            </p>
+          </div>
+        )}
+      </>
     );
   }
 
@@ -1300,7 +1478,7 @@ export default function OrderWizard({
           )}
         </div>
         <label className={fieldCls}>
-          <span className={fieldLabelCls}>Name on the piece</span>
+          <span className={fieldLabelCls}>Name on the piece (optional)</span>
           <input
             type="text"
             className={inputCls}
@@ -1326,7 +1504,12 @@ export default function OrderWizard({
     return (
       <>
         <div className={gridCls}>
-          {([["Yes", true], ["No", false]] as const).map(([label, yes]) => (
+          {(
+            [
+              ["Yes", true],
+              ["No", false],
+            ] as const
+          ).map(([label, yes]) => (
             <button
               key={label}
               type="button"
@@ -1493,29 +1676,29 @@ export default function OrderWizard({
             onScroll={updateChipOverflow}
           >
             <div className="mx-auto flex w-max items-center gap-1.5 px-0.5">
-            {pieceList.map((p, i) => {
-              const ready = pieceReady(p);
-              const isActive = i === active;
-              return (
-                <button
-                  key={i}
-                  type="button"
-                  aria-label={`Piece ${i + 1}${ready ? ", finished" : ""}`}
-                  aria-current={isActive ? "true" : undefined}
-                  className={`shrink-0 cursor-pointer rounded-full border-2 px-3 py-1 text-[12.5px] font-bold ${focusRing} ${
-                    isActive
-                      ? "border-shop-pink bg-shop-pink text-white"
-                      : ready
-                        ? "border-aqua bg-white text-[#0e6d76]"
-                        : "border-cord bg-white text-shop-muted"
-                  }`}
-                  onClick={() => switchPiece(i)}
-                >
-                  {i + 1}
-                  {ready && !isActive ? " ✓" : ""}
-                </button>
-              );
-            })}
+              {pieceList.map((p, i) => {
+                const ready = pieceReady(p);
+                const isActive = i === active;
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    aria-label={`Piece ${i + 1}${ready ? ", finished" : ""}`}
+                    aria-current={isActive ? "true" : undefined}
+                    className={`shrink-0 cursor-pointer rounded-full border-2 px-3 py-1 text-[12.5px] font-bold ${focusRing} ${
+                      isActive
+                        ? "border-shop-pink bg-shop-pink text-white"
+                        : ready
+                          ? "border-aqua bg-white text-[#0e6d76]"
+                          : "border-cord bg-white text-shop-muted"
+                    }`}
+                    onClick={() => switchPiece(i)}
+                  >
+                    {i + 1}
+                    {ready && !isActive ? " ✓" : ""}
+                  </button>
+                );
+              })}
             </div>
           </div>
           {/* swipe affordance: a pink chevron floats over whichever edge has
@@ -1581,6 +1764,13 @@ export default function OrderWizard({
         price: priceOf(options, "FULFILLMENT", order.fulfillment),
       });
     }
+    if (order.deliveryDate) {
+      orderLines.push({
+        label: "Needed by",
+        value: formatDeliveryDate(order.deliveryDate),
+        price: null,
+      });
+    }
     groups.push({ title: null, price: null, active: false, lines: orderLines });
 
     // then a breakdown per piece — itemized for the active one, a one-line
@@ -1609,7 +1799,8 @@ export default function OrderWizard({
         }
         push("Design", "DESIGN", p.design);
         if (!pPlain) {
-          push("Letters", "SIZE", p.size);
+          // a nameless piece has no letters, so no letter size to show
+          if (p.beadName?.trim()) push("Letters", "SIZE", p.size);
           push("Beads", "BEAD", p.bead);
         }
         for (const a of p.addons) push("Add-on", "ADDON", a);
@@ -1628,7 +1819,7 @@ export default function OrderWizard({
           p.merch,
           p.beadName?.trim() && `“${p.beadName.trim()}”`,
           p.color,
-          p.size,
+          p.beadName?.trim() ? p.size : undefined,
           p.bead,
           p.addons.length ? `+ ${p.addons.join(", ")}` : undefined,
         ),
@@ -1643,7 +1834,12 @@ export default function OrderWizard({
         {plain || !piece.beadName ? (
           <PlainStrand color={colorHex} charm={charm} />
         ) : (
-          <BeadLine text={piece.beadName} color={colorHex} charm={charm} small />
+          <BeadLine
+            text={piece.beadName}
+            color={colorHex}
+            charm={charm}
+            small
+          />
         )}
       </div>
     ) : null;
@@ -1691,9 +1887,8 @@ export default function OrderWizard({
           </header>
           <div className="rounded-[18px] bg-white px-5 py-[22px] shadow-[0_10px_0_-4px_rgba(197,184,223,.55)]">
             <p className="mb-[18px] text-base">
-              Build your piece one choice at a time. At the end you get an
-              order code — send it with your payment and we&apos;ll start
-              making it.
+              Build your piece one choice at a time. At the end you get an order
+              code — send it with your payment and we&apos;ll start making it.
             </p>
             <button
               className={btnPrimary}
@@ -1864,7 +2059,7 @@ export default function OrderWizard({
                     p.merch,
                     p.beadName?.trim() && `“${p.beadName.trim()}”`,
                     p.color,
-                    p.size,
+                    p.beadName?.trim() ? p.size : undefined,
                     p.bead,
                     p.addons.length ? `+ ${p.addons.join(", ")}` : undefined,
                   )}
@@ -1901,6 +2096,12 @@ export default function OrderWizard({
               ["For", order.customerName],
               ["Mobile", order.contact],
               ["Collection", order.fulfillment],
+              [
+                "Needed by",
+                order.deliveryDate
+                  ? formatDeliveryDate(order.deliveryDate)
+                  : undefined,
+              ],
               ["Payment", order.payment],
               ["Note", order.notes],
             ]}
@@ -1976,6 +2177,12 @@ export default function OrderWizard({
                 rows={[
                   ["For", order.customerName],
                   ["Collection", order.fulfillment],
+                  [
+                    "Needed by",
+                    order.deliveryDate
+                      ? formatDeliveryDate(order.deliveryDate)
+                      : undefined,
+                  ],
                   ["Payment", `${order.payment} · ${placed.status}`],
                   ["Ordered", placed.orderedOn],
                 ]}
@@ -2092,7 +2299,9 @@ export default function OrderWizard({
                   ? DetailsStep()
                   : step.type === "payment"
                     ? PaymentStep()
-                    : TileStep()}
+                    : step.key === "fulfillment"
+                      ? FulfillmentStep()
+                      : TileStep()}
         </div>
 
         <div className="sticky bottom-0 z-[5] -mx-[18px] mt-[22px] border-t border-cord/80 bg-paper px-[18px] pt-3 pb-[calc(12px+env(safe-area-inset-bottom))]">

@@ -23,6 +23,8 @@ const MAX_PIECES = 100;
 
 type OrderBody = {
   fulfillment?: string;
+  /** Pre-orders only: the date the customer needs the order by (YYYY-MM-DD). */
+  deliveryDate?: string;
   customerName?: string;
   contact?: string;
   notes?: string;
@@ -73,23 +75,21 @@ function validatePiece(
   const design = requireOption(options, "DESIGN", p.design, `design${which}`);
 
   // Items ticked "No beaded name" skip the name, letter size and bead mix.
+  // On other items the name is optional — with no name there are no letters,
+  // so the letter size is skipped too; the bead mix is always needed.
   const plain = !!merch.plain;
-  const size = plain
-    ? null
-    : requireOption(options, "SIZE", p.size, `letter size${which}`);
+  const beadName = plain ? "" : cleanName(p.beadName ?? "").trim();
+  if (beadName.length > settings.maxNameLength) {
+    throw new Error(`Names can be up to ${settings.maxNameLength} characters.`);
+  }
+  const named = !plain && beadName.length > 0;
+
+  const size = named
+    ? requireOption(options, "SIZE", p.size, `letter size${which}`)
+    : null;
   const bead = plain
     ? null
     : requireOption(options, "BEAD", p.bead, `bead style${which}`);
-
-  const beadName = plain ? "" : cleanName(p.beadName ?? "").trim();
-  if (!plain) {
-    if (!beadName) throw new Error(`Type the name we should bead${which}.`);
-    if (beadName.length > settings.maxNameLength) {
-      throw new Error(
-        `Names can be up to ${settings.maxNameLength} characters.`,
-      );
-    }
-  }
 
   const addons = (Array.isArray(p.addons) ? p.addons : []).map(
     (a) => requireOption(options, "ADDON", a, `add-on${which}`).value,
@@ -209,6 +209,21 @@ export async function POST(req: Request) {
       );
     }
 
+    // Pre-orders carry the date the customer needs the order by.
+    let deliveryDate: string | null = null;
+    if (!/pick/i.test(fulfillment.value)) {
+      const d = String(body.deliveryDate ?? "").trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+        throw new Error("Pick the date you need it by.");
+      }
+      const wanted = new Date(`${d}T00:00:00Z`);
+      const today = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`);
+      if (isNaN(wanted.getTime()) || wanted < today) {
+        throw new Error("Pick the date you need it by — it can't be in the past.");
+      }
+      deliveryDate = d;
+    }
+
     const notes = String(body.notes ?? "")
       .trim()
       .slice(0, 300);
@@ -269,6 +284,7 @@ export async function POST(req: Request) {
         pieces,
         piece_count: pieces.length,
         payment: payment.value,
+        delivery_date: deliveryDate,
         notes: notes || null,
         design: { ...body, pieces }, // full submission snapshot
         subtotal,
@@ -310,6 +326,7 @@ export async function POST(req: Request) {
         ),
         `For: ${customerName} (${contact})`,
         `Collection: ${fulfillment.value}`,
+        deliveryDate ? `Needed by: ${deliveryDate}` : "",
         `Payment: ${payment.value}`,
         `Total: ${formatMoney(settings.currency, total)}` +
           (discountLabel

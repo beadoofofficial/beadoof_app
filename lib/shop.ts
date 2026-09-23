@@ -70,6 +70,8 @@ export type PieceSelections = {
     built plus the order-level fields (who, how, payment). */
 export type WizardSelections = PieceSelections & {
   fulfillment?: string;
+  /** Pre-orders only: the date the customer needs the order by (YYYY-MM-DD). */
+  deliveryDate?: string;
   customerName?: string;
   contact?: string;
   notes?: string;
@@ -117,15 +119,17 @@ export function pieceSubtotalOf(
   pricePerLetter: number,
 ): number {
   const plain = isPlainMerch(options, piece.merch);
+  const named = !plain && !!piece.beadName?.trim();
   let t = 0;
   t += priceOf(options, "MERCH", piece.merch);
   t += priceOf(options, "COLOR", piece.color);
   t += priceOf(options, "DESIGN", piece.design);
   if (!plain) {
-    t += priceOf(options, "SIZE", piece.size);
     t += priceOf(options, "BEAD", piece.bead);
-    if (piece.beadName) {
-      t += piece.beadName.replace(/\s/g, "").length * (pricePerLetter || 0);
+    // letters (and their size) only cost something when there is a name
+    if (named) {
+      t += priceOf(options, "SIZE", piece.size);
+      t += piece.beadName!.replace(/\s/g, "").length * (pricePerLetter || 0);
     }
   }
   for (const a of piece.addons ?? []) t += priceOf(options, "ADDON", a);
