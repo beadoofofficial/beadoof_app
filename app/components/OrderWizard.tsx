@@ -883,9 +883,26 @@ type TrackResult = {
   total: number;
   payment: string;
   status: string;
+  /** Making status (creating_status): "", "In progress", "For delivery", "Done". */
+  making?: string;
   pieceCount?: number;
   orderedOn: string;
 };
+
+/** Customer-friendly pill for the making status; null while not started. */
+function makingPill(making: string | undefined): {
+  label: string;
+  cls: string;
+} | null {
+  const m = (making ?? "").trim();
+  if (!m) return null;
+  if (/done/i.test(m)) return { label: "Done", cls: "bg-[#bff0d2] text-[#1b5e35]" };
+  if (/deliver/i.test(m))
+    return { label: "For delivery", cls: "bg-aqua/30 text-[#0e6d76]" };
+  if (/progress/i.test(m))
+    return { label: "Being made", cls: "bg-[#9366d6]/25 text-[#4a2d80]" };
+  return { label: m, cls: "bg-cord/40 text-ink/70" };
+}
 
 const emptyPiece = (): PieceDraft => ({ addons: [], wantsAddons: null });
 
@@ -1962,13 +1979,25 @@ export default function OrderWizard({
               {trackError && <p className={errorCls}>{trackError}</p>}
               {trackResult && (
                 <>
-                  <span
-                    className={`inline-block rounded-full px-3 py-[3px] text-[13px] font-bold ${
-                      paid ? "bg-[#bff0d2]" : "bg-lemon"
-                    }`}
-                  >
-                    {trackResult.status}
-                  </span>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span
+                      className={`inline-block rounded-full px-3 py-[3px] text-[13px] font-bold ${
+                        paid ? "bg-[#bff0d2]" : "bg-lemon"
+                      }`}
+                    >
+                      {trackResult.status}
+                    </span>
+                    {(() => {
+                      const mk = makingPill(trackResult.making);
+                      return mk ? (
+                        <span
+                          className={`inline-block rounded-full px-3 py-[3px] text-[13px] font-bold ${mk.cls}`}
+                        >
+                          {mk.label}
+                        </span>
+                      ) : null;
+                    })()}
+                  </div>
                   <Summary
                     rows={[
                       ["Code", trackResult.code],

@@ -51,6 +51,8 @@ type Order = {
 /* ---------------- status models ---------------- */
 
 const PAY_STATUSES = ["Unpaid", "Proof sent", "Paid"] as const;
+
+const PAGE_SIZE = 20;
 const PAY_SHORT: Record<string, string> = {
   Unpaid: "Unpaid",
   "Proof sent": "Proof",
@@ -61,6 +63,7 @@ const PAY_SHORT: Record<string, string> = {
 const MAKE_SEGMENTS = [
   { label: "To do", value: "" },
   { label: "Making", value: "In progress" },
+  { label: "For delivery", value: "For delivery" },
   { label: "Done", value: "Done" },
 ] as const;
 
@@ -75,6 +78,7 @@ function payTone(status: string): string {
 
 function makeTone(value: string): string {
   if (/done/i.test(value)) return "bg-emerald-500 text-white";
+  if (/deliver/i.test(value)) return "bg-aqua text-[#08343a]";
   if (/progress/i.test(value)) return "bg-[#9366d6] text-white";
   return "bg-cord text-ink";
 }
@@ -232,6 +236,7 @@ export default function AdminOrdersPage() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [proofOrderId, setProofOrderId] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
   const savingRef = useRef(false);
 
   const refresh = useCallback(async (silent = false) => {
@@ -334,8 +339,9 @@ export default function AdminOrdersPage() {
 
   const stats = useMemo(() => {
     const awaiting = orders.filter((o) => !/^paid$/i.test(payOf(o))).length;
+    // "still to make" = paid but not yet made (For delivery counts as made)
     const toMake = orders.filter(
-      (o) => /^paid$/i.test(payOf(o)) && !/done/i.test(makeOf(o)),
+      (o) => /^paid$/i.test(payOf(o)) && !/done|deliver/i.test(makeOf(o)),
     ).length;
     const paidTotal = orders
       .filter((o) => /^paid$/i.test(payOf(o)))
@@ -356,6 +362,47 @@ export default function AdminOrdersPage() {
       .filter(Boolean)
       .some((v) => String(v).toLowerCase().includes(q));
   });
+
+  // pagination over the filtered list; filters and stats always see all orders
+  const pageCount = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount - 1);
+  const paged = shown.slice(
+    currentPage * PAGE_SIZE,
+    (currentPage + 1) * PAGE_SIZE,
+  );
+
+  function goToPage(p: number) {
+    setPage(Math.max(0, Math.min(p, pageCount - 1)));
+    window.scrollTo(0, 0);
+  }
+
+  const pagerBtn =
+    "cursor-pointer rounded-full bg-white px-3.5 py-1.5 font-display text-[12.5px] font-medium text-ink/80 hover:bg-cord/30 disabled:cursor-default disabled:opacity-40";
+
+  const pager =
+    pageCount > 1 ? (
+      <div className="flex items-center justify-center gap-3">
+        <button
+          type="button"
+          className={pagerBtn}
+          disabled={currentPage === 0}
+          onClick={() => goToPage(currentPage - 1)}
+        >
+          ‹ Prev
+        </button>
+        <span className="text-xs text-shop-muted tabular-nums">
+          Page {currentPage + 1} of {pageCount} · {shown.length} orders
+        </span>
+        <button
+          type="button"
+          className={pagerBtn}
+          disabled={currentPage >= pageCount - 1}
+          onClick={() => goToPage(currentPage + 1)}
+        >
+          Next ›
+        </button>
+      </div>
+    ) : null;
 
   const chip = (on: boolean) =>
     `cursor-pointer rounded-full px-3 py-1.5 font-display text-[12.5px] font-medium ${
@@ -401,18 +448,22 @@ export default function AdminOrdersPage() {
         {(
           [
             ["All orders", String(stats.all), () => {
+              setPage(0);
               setPayFilter("All");
               setMakeFilter("All");
             }],
             ["Awaiting payment", String(stats.awaiting), () => {
+              setPage(0);
               setPayFilter("Unpaid");
               setMakeFilter("All");
             }],
             ["Still to make", String(stats.toMake), () => {
+              setPage(0);
               setPayFilter("Paid");
               setMakeFilter("To do");
             }],
             ["Paid so far", `PHP ${stats.paidTotal.toLocaleString()}`, () => {
+              setPage(0);
               setPayFilter("Paid");
               setMakeFilter("All");
             }],
@@ -445,7 +496,7 @@ export default function AdminOrdersPage() {
             <button
               key={s}
               className={chip(payFilter === s)}
-              onClick={() => setPayFilter(s)}
+              onClick={() => { setPage(0); setPayFilter(s); }}
             >
               {PAY_SHORT[s] ?? s} ({counts.pay[s] ?? 0})
             </button>
@@ -454,7 +505,7 @@ export default function AdminOrdersPage() {
             className="ml-auto w-full rounded-full border-2 border-cord/50 bg-white px-3.5 py-1.5 text-sm focus:border-aqua focus:outline-none sm:w-60"
             placeholder="Search code, name, mobile…"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => { setPage(0); setQuery(e.target.value); }}
           />
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -465,7 +516,7 @@ export default function AdminOrdersPage() {
             <button
               key={s}
               className={chip(makeFilter === s)}
-              onClick={() => setMakeFilter(s)}
+              onClick={() => { setPage(0); setMakeFilter(s); }}
             >
               {s} ({counts.make[s] ?? 0})
             </button>
@@ -482,8 +533,9 @@ export default function AdminOrdersPage() {
             : "Nothing matches these filters."}
         </div>
       ) : (
+        <>
         <ul className="space-y-1.5">
-          {shown.map((o) => {
+          {paged.map((o) => {
             const saving = savingId === o.id;
             const expanded = expandedId === o.id;
             const multi = (o.pieces?.length ?? 0) > 1;
@@ -664,6 +716,8 @@ export default function AdminOrdersPage() {
             );
           })}
         </ul>
+          {pager}
+        </>
       )}
 
       {proofOrder && (
