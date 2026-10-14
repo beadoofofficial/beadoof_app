@@ -53,10 +53,67 @@ export type ShopBootstrap = {
   open: boolean;
   settings: ShopSettings;
   options: ShopOptions;
+  /** Active pre-made designs, in sort order. */
+  designs: PremadeDesign[];
 };
 
-/** One piece of an order — an order can hold several. */
+/** A ready-made design from the catalogue (shop_designs): a saved recipe
+    over the regular catalog; the customer only picks a colour, and the price
+    is computed from the recipe like any custom piece. */
+export type PremadeDesign = {
+  id: string;
+  name: string;
+  note: string;
+  merch?: string;
+  beadName?: string;
+  design?: string;
+  size?: string;
+  bead?: string;
+  addons: string[];
+  /** Fixed colour; unset means the customer picks one at purchase. */
+  color?: string;
+  /** Set/collection the catalogue groups by (from shop_sets; "" = ungrouped). */
+  setName: string;
+  /** The set's sort order, for section/sidebar ordering. */
+  setSort: number;
+  imageUrl: string | null;
+  active: boolean;
+  sort: number;
+};
+
+/** The design's recipe as an order piece. A colour fixed on the design wins
+    over whatever the customer sent. */
+export function premadePieceOf(
+  d: PremadeDesign,
+  color?: string,
+): PieceSelections {
+  return {
+    premadeId: d.id,
+    merch: d.merch,
+    color: d.color || color,
+    beadName: d.beadName,
+    design: d.design,
+    size: d.size,
+    bead: d.bead,
+    addons: d.addons ?? [],
+  };
+}
+
+/** What a design costs with a given colour (or without one, for the card). */
+export function premadePriceOf(
+  options: ShopOptions,
+  d: PremadeDesign,
+  color: string | undefined,
+  pricePerLetter: number,
+): number {
+  return pieceSubtotalOf(options, premadePieceOf(d, color), pricePerLetter);
+}
+
+/** One piece of an order — an order can hold several.
+    A piece is either custom (the wizard fields) or pre-made
+    (premadeId + colour, everything else fixed by the design). */
 export type PieceSelections = {
+  premadeId?: string;
   merch?: string;
   color?: string;
   beadName?: string;

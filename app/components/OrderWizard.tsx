@@ -20,11 +20,13 @@ import {
   isPlainMerch,
   orderSubtotalOf,
   pieceSubtotalOf,
+  premadePriceOf,
   priceOf,
   qrPayload,
   totalOf,
   type Category,
   type PieceSelections,
+  type PremadeDesign,
   type ShopBootstrap,
   type ShopOption,
 } from "@/lib/shop";
@@ -699,7 +701,14 @@ function Sidecar({
 
 /* ------------------------------------------------ types ------------ */
 
-type View = "start" | "steps" | "review" | "receipt" | "track";
+type View =
+  | "start"
+  | "steps"
+  | "review"
+  | "receipt"
+  | "track"
+  | "catalog"
+  | "checkout";
 
 type StepType =
   | "single"
@@ -906,6 +915,9 @@ function makingPill(making: string | undefined): {
 
 const emptyPiece = (): PieceDraft => ({ addons: [], wantsAddons: null });
 
+/** One catalogue pick waiting for checkout. */
+type CartItem = { design: PremadeDesign; color: string; qty: number };
+
 /* ------------------------------------------------ the wizard ------- */
 
 export default function OrderWizard({
@@ -917,7 +929,7 @@ export default function OrderWizard({
   signedIn: boolean;
   isAdmin: boolean;
 }) {
-  const { settings, options, open } = boot;
+  const { settings, options, open, designs } = boot;
 
   const [view, setView] = useState<View>("start");
   const [stepIndex, setStepIndex] = useState(0);
@@ -933,6 +945,30 @@ export default function OrderWizard({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [placed, setPlaced] = useState<PlacedOrder | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // pre-made catalogue: the cart, the quick-view design, and the filters
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [openDesign, setOpenDesign] = useState<string | null>(null);
+  const [pickColor, setPickColor] = useState<string | undefined>(undefined);
+  const [pickQty, setPickQty] = useState(1);
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const [catalogSet, setCatalogSet] = useState("All");
+  const [catalogColor, setCatalogColor] = useState("All");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [trayCartOpen, setTrayCartOpen] = useState(false);
+  const [catalogSort, setCatalogSort] = useState<
+    "featured" | "price-asc" | "price-desc" | "name"
+  >("featured");
+
+  // Escape closes the design quick-view
+  useEffect(() => {
+    if (!openDesign) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpenDesign(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openDesign]);
 
   const [trackCode, setTrackCode] = useState("");
   const [trackBusy, setTrackBusy] = useState(false);
@@ -1096,6 +1132,98 @@ export default function OrderWizard({
   );
   const total = totalOf(subtotal, settings.discountPercent);
 
+  /* ---------------- pre-made cart ---------------- */
+
+  const cartCount = cart.reduce((s, it) => s + it.qty, 0);
+  const cartItemPrice = (it: CartItem) =>
+    premadePriceOf(options, it.design, it.color, settings.pricePerLetter);
+  const cartSubtotal = Math.round(
+    priceOf(options, "FULFILLMENT", order.fulfillment) +
+      cart.reduce((s, it) => s + it.qty * cartItemPrice(it), 0),
+  );
+  const cartTotal = totalOf(cartSubtotal, settings.discountPercent);
+
+  function addToCart(design: PremadeDesign, color: string, qty: number) {
+    const room = Math.max(0, MAX_PIECES - cartCount);
+    const add = Math.min(qty, room);
+    if (add <= 0) return;
+    setCart((c) => {
+      const i = c.findIndex(
+        (it) => it.design.id === design.id && it.color === color,
+      );
+      if (i > -1) {
+        return c.map((it, j) => (j === i ? { ...it, qty: it.qty + add } : it));
+      }
+      return [...c, { design, color, qty: add }];
+    });
+    setOpenDesign(null);
+    setPickColor(undefined);
+    setPickQty(1);
+  }
+
+  function removeCartItem(index: number) {
+    setCart((c) => c.filter((_, i) => i !== index));
+  }
+
+  function cartCheckoutProblem(): string | null {
+    if (cart.length === 0) return "Your cart is empty.";
+    if (!order.fulfillment) return "Choose pick up or pre order.";
+    if (!/pick/i.test(order.fulfillment) && !order.deliveryDate) {
+      return "Pick the date you need it by.";
+    }
+    if (String(order.customerName ?? "").trim().length < 2) {
+      return "Add the name we should look for when you collect.";
+    }
+    if (String(order.contact ?? "").replace(/\D/g, "").length < 7) {
+      return "Add a mobile number we can reach you on.";
+    }
+    if (!order.payment) return "Choose how you will pay.";
+    return null;
+  }
+
+  async function placeCart() {
+    if (submitting) return;
+    const problem = cartCheckoutProblem();
+    if (problem) {
+      setSubmitError(problem);
+      return;
+    }
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const res = await fetch("/api/order", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          fulfillment: order.fulfillment,
+          deliveryDate: order.deliveryDate,
+          customerName: order.customerName,
+          contact: order.contact,
+          notes: order.notes,
+          payment: order.payment,
+          pieces: cart.flatMap((it) =>
+            Array.from({ length: it.qty }, () => ({
+              premadeId: it.design.id,
+              color: it.color,
+              addons: [],
+            })),
+          ),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        setSubmitError(data.error || "That did not save. Try again.");
+        return;
+      }
+      setPlaced(data as PlacedOrder);
+      setView("receipt");
+    } catch {
+      setSubmitError("That did not save. Try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   /* ---------------- navigation ---------------- */
 
   function stepIsComplete(): boolean {
@@ -1184,6 +1312,10 @@ export default function OrderWizard({
     setSubmitError(null);
     setPlaced(null);
     setCopied(false);
+    setCart([]);
+    setOpenDesign(null);
+    setPickColor(undefined);
+    setPickQty(1);
     setView("start");
   }
 
@@ -1622,7 +1754,7 @@ export default function OrderWizard({
     );
   }
 
-  function PaymentStep() {
+  function PaymentStep(amount: number) {
     const pickup = /pick/i.test(order.fulfillment ?? "");
     const paymentOpt = findOpt(options, "PAYMENT", order.payment);
     return (
@@ -1650,7 +1782,7 @@ export default function OrderWizard({
         </div>
         {/gcash/i.test(order.payment ?? "") && settings.gcashNumber && (
           <p className={`${receiptPayCls} mt-3.5`}>
-            Send {money(total)} to {settings.gcashNumber}
+            Send {money(amount)} to {settings.gcashNumber}
             {settings.gcashName ? ` (${settings.gcashName})` : ""} after you
             place the order, then send us the screenshot with your order code.
           </p>
@@ -1658,8 +1790,8 @@ export default function OrderWizard({
         {order.payment && (
           <QrBox
             option={paymentOpt}
-            lead={`Scan this to pay ${money(total)}.`}
-            amount={total}
+            lead={`Scan this to pay ${money(amount)}.`}
+            amount={amount}
             qrDynamic={settings.qrDynamic}
           />
         )}
@@ -1892,7 +2024,8 @@ export default function OrderWizard({
 
   if (view === "start") {
     return (
-      <div className={shellCls}>
+      // the two path cards sit side by side once there's room for both
+      <div className={`${shellCls} ${designs.length > 0 ? "md:max-w-[828px]" : ""}`}>
         <section className={viewCls}>
           <header className="pt-[34px] pb-5 text-center">
             <BeadLine text={settings.businessName || "BEADOOF"} fit />
@@ -1902,32 +2035,59 @@ export default function OrderWizard({
               </p>
             )}
           </header>
-          <div className="rounded-[18px] bg-white px-5 py-[22px] shadow-[0_10px_0_-4px_rgba(197,184,223,.55)]">
-            <p className="mb-[18px] text-base">
-              Build your piece one choice at a time. At the end you get an order
-              code — send it with your payment and we&apos;ll start making it.
-            </p>
-            <button
-              className={btnPrimary}
-              disabled={!open}
-              onClick={() => {
-                setStepIndex(0);
-                setView("steps");
-              }}
-            >
-              Start an order
-            </button>
-            <button
-              className={btnQuiet}
-              onClick={() => {
-                setTrackResult(null);
-                setTrackError(null);
-                setView("track");
-              }}
-            >
-              Check an order code
-            </button>
+          {/* two clear paths: build your own, or shop the ready-made designs */}
+          <div
+            className={`grid gap-3.5 ${designs.length > 0 ? "md:grid-cols-2" : ""}`}
+          >
+            <div className="flex flex-col rounded-[18px] bg-white px-5 py-[22px] shadow-[0_10px_0_-4px_rgba(197,184,223,.55)]">
+              <h2 className="mb-1 font-display text-[19px] font-medium">
+                Design your own
+              </h2>
+              <p className="mb-[18px] text-[15px]">
+                Build your piece one choice at a time. At the end you get an
+                order code — send it with your payment and we&apos;ll start
+                making it.
+              </p>
+              <button
+                className={`${btnPrimary} mt-auto`}
+                disabled={!open}
+                onClick={() => {
+                  setStepIndex(0);
+                  setView("steps");
+                }}
+              >
+                Start designing
+              </button>
+            </div>
+            {designs.length > 0 && (
+              <div className="flex flex-col rounded-[18px] bg-white px-5 py-[22px] shadow-[0_10px_0_-4px_rgba(197,184,223,.55)]">
+                <h2 className="mb-1 font-display text-[19px] font-medium">
+                  Pre-made designs
+                </h2>
+                <p className="mb-[18px] text-[15px]">
+                  In a hurry? Pick a ready-made design, choose your colour, and
+                  check out — same order code, same pick up.
+                </p>
+                <button
+                  className={`${btnBase} mt-auto bg-aqua text-[#08343a] shadow-[0_4px_0_#1fa2ae] active:translate-y-[3px] active:shadow-[0_1px_0_#1fa2ae] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none`}
+                  disabled={!open}
+                  onClick={() => setView("catalog")}
+                >
+                  Browse the designs
+                </button>
+              </div>
+            )}
           </div>
+          <button
+            className={btnQuiet}
+            onClick={() => {
+              setTrackResult(null);
+              setTrackError(null);
+              setView("track");
+            }}
+          >
+            Check an order code
+          </button>
           {!open && (
             <p className="mt-[18px] rounded-[14px] bg-lemon px-4 py-3.5 font-bold">
               {settings.closedMessage}
@@ -2031,6 +2191,670 @@ export default function OrderWizard({
               )}
             </div>
           )}
+        </section>
+      </div>
+    );
+  }
+
+  if (view === "catalog") {
+    const openD = designs.find((d) => d.id === openDesign) ?? null;
+    const openCharm = openD
+      ? (findOpt(options, "DESIGN", openD.design)?.style ?? "")
+      : "";
+    const openHex = pickColor ? colorHexOf(options, pickColor) : null;
+
+    const designPrice = (d: PremadeDesign) =>
+      premadePriceOf(options, d, d.color ?? pickColor, settings.pricePerLetter);
+    const cardPrice = (d: PremadeDesign) =>
+      premadePriceOf(options, d, d.color, settings.pricePerLetter);
+
+    // sidebar sets (ordered by their managed sort) + search + sort
+    const setMeta = new Map<string, number>();
+    for (const d of designs) {
+      if (d.setName && !setMeta.has(d.setName)) setMeta.set(d.setName, d.setSort);
+    }
+    const setNames = [...setMeta.entries()]
+      .sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]))
+      .map(([n]) => n);
+    const hasLoose = designs.some((d) => !d.setName);
+    const q = catalogSearch.trim().toLowerCase();
+    const shownDesigns = designs
+      .filter((d) => {
+        if (catalogSet === "Other" && d.setName) return false;
+        if (catalogSet !== "All" && catalogSet !== "Other" && d.setName !== catalogSet)
+          return false;
+        // a fixed-colour design only matches its own colour; a customizable
+        // one can be made in any colour, so it matches them all
+        if (catalogColor !== "All" && d.color && d.color !== catalogColor)
+          return false;
+        if (!q) return true;
+        return [d.name, d.note, d.setName, d.merch]
+          .filter(Boolean)
+          .some((v) => String(v).toLowerCase().includes(q));
+      })
+      .sort((a, b) => {
+        if (catalogSort === "price-asc") return cardPrice(a) - cardPrice(b);
+        if (catalogSort === "price-desc") return cardPrice(b) - cardPrice(a);
+        if (catalogSort === "name") return a.name.localeCompare(b.name);
+        return a.sort - b.sort; // featured
+      });
+
+    const activeFilters =
+      (catalogSet !== "All" ? 1 : 0) + (catalogColor !== "All" ? 1 : 0);
+
+    // the cart rows, shown in the sidebar (desktop) and the tray (phones)
+    const cartList = cart.map((it, i) => (
+      <div key={`${it.design.id}-${it.color}`} className={summaryRowCls}>
+        <span className="min-w-0 truncate">
+          {it.qty} × {it.design.name} · {it.color}
+        </span>
+        <span className="flex flex-none items-baseline gap-2">
+          <span className="font-medium">
+            {money(it.qty * cartItemPrice(it))}
+          </span>
+          <button
+            type="button"
+            aria-label={`Remove ${it.design.name}`}
+            className="cursor-pointer text-[#a31346]"
+            onClick={() => removeCartItem(i)}
+          >
+            ✕
+          </button>
+        </span>
+      </div>
+    ));
+
+    const chipCls = (on: boolean) =>
+      `shrink-0 cursor-pointer rounded-full px-3 py-1.5 text-left font-display text-[12.5px] font-medium ${
+        on
+          ? "bg-shop-pink text-white shadow-sm"
+          : "bg-paper text-ink/80 hover:bg-cord/30 lg:bg-white"
+      }`;
+
+    const setChip = (label: string, value: string, count: number) => (
+      <button
+        key={value}
+        type="button"
+        className={chipCls(catalogSet === value)}
+        onClick={() => setCatalogSet(value)}
+      >
+        {label} <span className="opacity-70">({count})</span>
+      </button>
+    );
+
+    // one set of chips, rendered in the sidebar (desktop) and the filter
+    // sheet (phones)
+    const setChips = [
+      setChip("All", "All", designs.length),
+      ...setNames.map((s) =>
+        setChip(s, s, designs.filter((d) => d.setName === s).length),
+      ),
+      ...(hasLoose && setNames.length > 0
+        ? [setChip("Other", "Other", designs.filter((d) => !d.setName).length)]
+        : []),
+    ];
+
+    const colorChips = [
+      <button
+        key="All"
+        type="button"
+        className={chipCls(catalogColor === "All")}
+        onClick={() => setCatalogColor("All")}
+      >
+        Any colour
+      </button>,
+      ...opts("COLOR")
+        .filter((o) => o.active)
+        .map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            className={`${chipCls(catalogColor === o.value)} flex items-center gap-1.5`}
+            onClick={() => setCatalogColor(o.value)}
+          >
+            <span
+              className="inline-block h-3 w-3 shrink-0 rounded-full border border-black/10"
+              style={{ background: colorHexOf(options, o.value) }}
+            />
+            {o.value}
+          </button>
+        )),
+    ];
+
+    return (
+      <div className={`${shellCls} lg:max-w-[1120px]`}>
+        <section
+          className={`${viewCls} flex min-h-[calc(100vh-48px)] flex-col`}
+        >
+          <div className={topbarCls}>
+            <button
+              className={iconBtn}
+              aria-label="Go back"
+              onClick={() => setView("start")}
+            >
+              ←
+            </button>
+            <h2 className={viewTitleCls}>Pre-made designs</h2>
+          </div>
+
+          <div className="flex-[1_0_auto] lg:grid lg:grid-cols-[180px_minmax(0,1fr)_300px] lg:items-start lg:gap-6">
+            {/* sets + search: a sidebar on desktop, chips + search on phones */}
+            <aside className="mb-3 lg:sticky lg:top-5 lg:mb-0">
+              {/* phones: search + a Filters button opening a bottom sheet;
+                  desktop: the full sections in the sidebar */}
+              <div className="flex gap-2 lg:block">
+                <input
+                  type="text"
+                  className={`${inputCls} min-w-0 flex-1 py-2 text-[15px]`}
+                  placeholder="Search the designs…"
+                  value={catalogSearch}
+                  onChange={(e) => setCatalogSearch(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className={`shrink-0 cursor-pointer rounded-xl border-2 px-3.5 font-display text-[13px] font-medium lg:hidden ${
+                    activeFilters > 0
+                      ? "border-shop-pink bg-shop-pink/10 text-shop-pink"
+                      : "border-cord/50 bg-white text-ink/80"
+                  }`}
+                  onClick={() => setFiltersOpen(true)}
+                >
+                  Filters{activeFilters > 0 ? ` · ${activeFilters}` : ""}
+                </button>
+              </div>
+              <div className="hidden lg:block">
+                {(setNames.length > 0 || hasLoose) && (
+                  <div className="mt-3">
+                    <p className="mb-1 text-[11px] font-bold tracking-wide text-shop-muted uppercase">
+                      Set
+                    </p>
+                    <div className="flex flex-col gap-1.5 py-0.5">
+                      {setChips}
+                    </div>
+                  </div>
+                )}
+                <div className="mt-3 border-t border-cord/50 pt-3">
+                  <p className="mb-1 text-[11px] font-bold tracking-wide text-shop-muted uppercase">
+                    Colour
+                  </p>
+                  <div className="flex flex-col gap-1.5 py-0.5">
+                    {colorChips}
+                  </div>
+                </div>
+              </div>
+            </aside>
+
+            <div className="space-y-3">
+              {/* results count + sort, marketplace style */}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[13px] text-shop-muted">
+                  {shownDesigns.length} design
+                  {shownDesigns.length === 1 ? "" : "s"}
+                  {catalogSet !== "All" ? ` in ${catalogSet}` : ""}
+                  {catalogColor !== "All" ? ` · ${catalogColor}` : ""}
+                </span>
+                <label className="flex items-center gap-1.5 text-[12px] text-shop-muted">
+                  Sort
+                  <select
+                    className="cursor-pointer rounded-full border-2 border-cord/50 bg-white px-2.5 py-1 font-display text-[12.5px] font-medium text-ink focus:border-aqua focus:outline-none"
+                    value={catalogSort}
+                    onChange={(e) =>
+                      setCatalogSort(e.target.value as typeof catalogSort)
+                    }
+                  >
+                    <option value="featured">Featured</option>
+                    <option value="price-asc">Price: low to high</option>
+                    <option value="price-desc">Price: high to low</option>
+                    <option value="name">Name A–Z</option>
+                  </select>
+                </label>
+              </div>
+
+              {shownDesigns.length === 0 ? (
+                <div className="rounded-[18px] bg-white p-8 text-center text-sm text-shop-muted">
+                  Nothing matches — try another set or clear the search.
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+                  {shownDesigns.map((d) => (
+                    <button
+                      key={d.id}
+                      type="button"
+                      className={`flex cursor-pointer flex-col overflow-hidden rounded-2xl bg-white text-left shadow-sm transition-shadow hover:shadow ${focusRing}`}
+                      onClick={() => {
+                        setOpenDesign(d.id);
+                        // a fixed colour wins; else the active colour filter
+                        // arrives pre-picked
+                        setPickColor(
+                          d.color ||
+                            (catalogColor !== "All" ? catalogColor : undefined),
+                        );
+                        setPickQty(1);
+                      }}
+                    >
+                      <div className="grid h-28 w-full place-items-center overflow-hidden bg-paper">
+                        {d.imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- shop-managed photo
+                          <img
+                            src={d.imageUrl}
+                            alt=""
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <BeadRing
+                            colors={
+                              findOpt(options, "BEAD", d.bead)?.style ?? ""
+                            }
+                          />
+                        )}
+                      </div>
+                      <div className="flex flex-1 flex-col gap-0.5 p-2.5">
+                        <span className="line-clamp-2 text-[13.5px] leading-snug font-medium">
+                          {d.name}
+                        </span>
+                        <span className="font-display text-[16px] font-semibold text-shop-pink">
+                          {money(cardPrice(d))}
+                        </span>
+                        {d.note && (
+                          <span className="line-clamp-1 text-[11.5px] text-shop-muted">
+                            {d.note}
+                          </span>
+                        )}
+                        <span className="mt-auto text-[10px] tracking-wide text-shop-muted uppercase">
+                          {dotted(d.setName || undefined, d.color || undefined)}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+            </div>
+
+            {/* the cart, placed like the wizard's "Your order so far" card */}
+            <aside
+              className="hidden lg:sticky lg:top-5 lg:block"
+              aria-label="Your order"
+            >
+              <div className="rounded-[18px] bg-white p-[18px] shadow-[0_10px_0_-4px_rgba(197,184,223,.55)]">
+                <h2 className="mb-3 font-display text-[19px] font-medium">
+                  Your order
+                </h2>
+                {cart.length === 0 ? (
+                  <p className="mb-1 text-[13.5px] text-shop-muted">
+                    Nothing picked yet — tap a design to add it.
+                  </p>
+                ) : (
+                  cartList
+                )}
+                <div className="mt-2.5">
+                  {settings.discountPercent > 0 && cartSubtotal > 0 && (
+                    <>
+                      <div className="flex justify-between gap-3 py-0.5 text-[13.5px] text-shop-muted">
+                        <span>Subtotal</span>
+                        <span>{money(cartSubtotal)}</span>
+                      </div>
+                      <div className="flex justify-between gap-3 py-0.5 text-[13.5px] font-bold text-[#8a6d00]">
+                        <span>
+                          {settings.discountLabel ||
+                            `${settings.discountPercent}% off`}
+                        </span>
+                        <span>−{money(cartSubtotal - cartTotal)}</span>
+                      </div>
+                    </>
+                  )}
+                  <div className="flex items-baseline justify-between gap-3 pt-1.5">
+                    <span>Total</span>
+                    <strong className="font-display text-[22px] font-semibold">
+                      {cartTotal > 0 ? money(cartTotal) : "—"}
+                    </strong>
+                  </div>
+                </div>
+                <p className="mt-2.5 text-center text-xs text-shop-muted">
+                  Prices update as you pick.
+                </p>
+              </div>
+            </aside>
+          </div>
+
+          <div className="sticky bottom-0 z-[5] -mx-[18px] mt-[22px] border-t border-cord/80 bg-paper px-[18px] pt-3 pb-[calc(12px+env(safe-area-inset-bottom))]">
+            {/* phones: tap the summary line to peek at the cart (desktop has
+                it in the sidebar) */}
+            {trayCartOpen && cart.length > 0 && (
+              <div className="mx-auto mb-2 max-h-44 max-w-[424px] overflow-y-auto rounded-xl bg-white p-2.5 lg:hidden">
+                {cartList}
+              </div>
+            )}
+            <button
+              type="button"
+              className="mx-auto mb-2 flex w-full max-w-[424px] cursor-pointer items-baseline justify-between"
+              onClick={() => setTrayCartOpen((v) => !v && cart.length > 0)}
+            >
+              <span className="text-[13.5px] text-shop-muted">
+                {dotted(
+                  cartCount > 0
+                    ? `${cartCount} item${cartCount === 1 ? "" : "s"} ${
+                        trayCartOpen ? "▾" : "▸"
+                      }`
+                    : undefined,
+                  settings.discountPercent > 0 && cartTotal > 0
+                    ? `${settings.discountLabel} applied`
+                    : "Running total",
+                )}
+              </span>
+              <strong className="font-display text-[21px] font-semibold">
+                {cartTotal > 0 ? money(cartTotal) : "—"}
+              </strong>
+            </button>
+            <button
+              className={`${btnPrimary} mx-auto block max-w-[424px]`}
+              disabled={cart.length === 0}
+              onClick={() => {
+                setSubmitError(null);
+                setView("checkout");
+              }}
+            >
+              Checkout
+            </button>
+          </div>
+        </section>
+
+        {/* phone filter sheet: Set + Colour as wrapping chips */}
+        {filtersOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm lg:hidden"
+            onClick={() => setFiltersOpen(false)}
+          >
+            <div
+              className="max-h-[85vh] w-full overflow-y-auto rounded-t-2xl bg-white p-4 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mb-3 flex items-center">
+                <h3 className="font-display text-[18px] font-medium">Filters</h3>
+                <button
+                  type="button"
+                  aria-label="Close"
+                  className="ml-auto cursor-pointer px-1 text-2xl leading-none text-shop-muted"
+                  onClick={() => setFiltersOpen(false)}
+                >
+                  ×
+                </button>
+              </div>
+              {(setNames.length > 0 || hasLoose) && (
+                <>
+                  <p className="mb-1.5 text-[11px] font-bold tracking-wide text-shop-muted uppercase">
+                    Set
+                  </p>
+                  <div className="mb-4 flex flex-wrap gap-1.5">{setChips}</div>
+                </>
+              )}
+              <p className="mb-1.5 text-[11px] font-bold tracking-wide text-shop-muted uppercase">
+                Colour
+              </p>
+              <div className="flex flex-wrap gap-1.5">{colorChips}</div>
+              <div className="mt-5 flex items-center gap-3">
+                <button
+                  type="button"
+                  className="cursor-pointer font-display text-sm font-medium text-shop-muted underline disabled:opacity-40"
+                  disabled={activeFilters === 0}
+                  onClick={() => {
+                    setCatalogSet("All");
+                    setCatalogColor("All");
+                  }}
+                >
+                  Clear all
+                </button>
+                <button
+                  className={`${btnPrimary} flex-1`}
+                  onClick={() => setFiltersOpen(false)}
+                >
+                  Show {shownDesigns.length} design
+                  {shownDesigns.length === 1 ? "" : "s"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* quick view — pick colour and quantity, straight from the grid */}
+        {openD && (
+          <div
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+            onClick={() => setOpenDesign(null)}
+          >
+            <div
+              className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-4 shadow-2xl sm:rounded-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mb-2 flex items-start gap-2">
+                <div className="min-w-0">
+                  <h3 className="font-display text-[18px] leading-tight font-medium">
+                    {openD.name}
+                  </h3>
+                  {openD.note && (
+                    <p className="mt-0.5 text-[13px] text-shop-muted">
+                      {openD.note}
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  aria-label="Close"
+                  className="ml-auto shrink-0 cursor-pointer px-1 text-2xl leading-none text-shop-muted hover:text-ink"
+                  onClick={() => setOpenDesign(null)}
+                >
+                  ×
+                </button>
+              </div>
+
+              {openD.imageUrl && (
+                // eslint-disable-next-line @next/next/no-img-element -- shop-managed photo
+                <img
+                  src={openD.imageUrl}
+                  alt=""
+                  className="mb-3 h-40 w-full rounded-xl object-cover"
+                />
+              )}
+
+              {/* live preview: the recipe strand in the chosen colour */}
+              <div className="mb-3 grid min-h-[58px] place-items-center rounded-[14px] bg-paper px-2 py-1.5">
+                {openD.beadName?.trim() ? (
+                  <BeadLine
+                    text={openD.beadName}
+                    color={openHex}
+                    charm={openCharm}
+                    small
+                  />
+                ) : (
+                  <PlainStrand color={openHex} charm={openCharm} />
+                )}
+              </div>
+
+              {openD.color ? (
+                <p className="mb-1 flex items-center gap-2 text-[14px]">
+                  <span className={fieldLabelCls + " !mb-0"}>Colour</span>
+                  <span
+                    className="inline-block h-4 w-4 rounded-full border border-black/10"
+                    style={{ background: colorHexOf(options, openD.color) }}
+                  />
+                  <span className="font-medium">{openD.color}</span>
+                </p>
+              ) : (
+                <>
+                  <p className={`${fieldLabelCls} mb-1.5`}>Pick your colour</p>
+                  <div className={grid3Cls}>
+                    {opts("COLOR")
+                      .filter((o) => o.active)
+                      .map((o) => (
+                        <button
+                          key={o.value}
+                          type="button"
+                          className={tileCenter}
+                          aria-pressed={pickColor === o.value}
+                          onClick={() => setPickColor(o.value)}
+                        >
+                          <span
+                            className="relative h-[34px] w-[34px] self-center rounded-full shadow-[inset_-5px_-5px_0_rgba(0,0,0,.15),inset_5px_5px_0_rgba(255,255,255,.45)] after:absolute after:inset-[42%] after:rounded-full after:bg-paper after:content-['']"
+                            style={{ background: colorHexOf(options, o.value) }}
+                          />
+                          <span className="font-display text-[14px] font-medium">
+                            {o.value}
+                          </span>
+                          {o.price > 0 && (
+                            <span className={tilePriceCls}>
+                              +{money(o.price)}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                  </div>
+                </>
+              )}
+
+              <div className="mt-3 flex items-center justify-center gap-5">
+                <button
+                  type="button"
+                  aria-label="One fewer"
+                  className={`${iconBtn} bg-paper text-xl disabled:cursor-not-allowed disabled:opacity-40`}
+                  disabled={pickQty <= 1}
+                  onClick={() => setPickQty(pickQty - 1)}
+                >
+                  −
+                </button>
+                <span className="min-w-10 text-center font-display text-2xl font-semibold tabular-nums">
+                  {pickQty}
+                </span>
+                <button
+                  type="button"
+                  aria-label="One more"
+                  className={`${iconBtn} bg-paper text-xl disabled:cursor-not-allowed disabled:opacity-40`}
+                  disabled={cartCount + pickQty >= MAX_PIECES}
+                  onClick={() => setPickQty(pickQty + 1)}
+                >
+                  +
+                </button>
+              </div>
+              <button
+                className={`${btnPrimary} mt-3`}
+                disabled={!pickColor}
+                onClick={() => addToCart(openD, pickColor!, pickQty)}
+              >
+                {pickColor
+                  ? `Add to order · ${money(pickQty * designPrice(openD))}`
+                  : "Pick a colour first"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (view === "checkout") {
+    const preorder = !!order.fulfillment && !/pick/i.test(order.fulfillment);
+    const sectionCls = "mt-5 mb-2 font-display text-[19px] font-medium";
+    return (
+      <div className={shellCls}>
+        <section className={viewCls}>
+          <div className={topbarCls}>
+            <button
+              className={iconBtn}
+              aria-label="Go back"
+              onClick={() => setView("catalog")}
+            >
+              ←
+            </button>
+            <h2 className={viewTitleCls}>Checkout</h2>
+          </div>
+
+          <div className="rounded-[18px] bg-white p-3.5">
+            {cart.map((it) => (
+              <div
+                key={`${it.design.id}-${it.color}`}
+                className={summaryRowCls}
+              >
+                <span className="min-w-0 truncate">
+                  {it.qty} × {it.design.name} · {it.color}
+                </span>
+                <span className="flex-none font-medium">
+                  {money(it.qty * cartItemPrice(it))}
+                </span>
+              </div>
+            ))}
+            {settings.discountPercent > 0 && cartSubtotal > 0 && (
+              <div className="mt-2.5 inline-block rounded-[10px] bg-lemon px-2.5 py-1.5 text-[13.5px] font-bold">
+                {settings.discountLabel} — was {money(cartSubtotal)}
+              </div>
+            )}
+            <div className="flex items-baseline justify-between pt-2">
+              <span>Total</span>
+              <strong className="font-display text-[25px] font-semibold">
+                {money(cartTotal)}
+              </strong>
+            </div>
+          </div>
+
+          <h3 className={sectionCls}>Pick up or pre order?</h3>
+          <div className={gridCls}>
+            {opts("FULFILLMENT").map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                className={tileBase}
+                aria-pressed={order.fulfillment === o.value}
+                disabled={!o.active}
+                onClick={() => {
+                  setSubmitError(null);
+                  pickOrder("fulfillment", o.value);
+                }}
+              >
+                <span className={tileNameCls}>{o.value}</span>
+                {o.note && <span className={tileNoteCls}>{o.note}</span>}
+              </button>
+            ))}
+          </div>
+          {preorder && (
+            <div className="mt-4">
+              <label className={fieldCls}>
+                <span className={fieldLabelCls}>When do you need it by?</span>
+                <input
+                  type="date"
+                  className={inputCls}
+                  min={minDeliveryDate()}
+                  value={order.deliveryDate ?? ""}
+                  onChange={(e) => {
+                    setSubmitError(null);
+                    setOrder((o) => ({
+                      ...o,
+                      deliveryDate: e.target.value || undefined,
+                    }));
+                  }}
+                />
+              </label>
+            </div>
+          )}
+
+          <h3 className={sectionCls}>Who is this for?</h3>
+          {DetailsStep()}
+
+          <h3 className={sectionCls}>How will you pay?</h3>
+          {PaymentStep(cartTotal)}
+
+          <div className="mt-5">
+            {submitError && <p className={errorCls}>{submitError}</p>}
+            <button
+              className={btnPrimary}
+              onClick={placeCart}
+              disabled={submitting || cart.length === 0}
+            >
+              {submitting ? "Placing your order…" : "Place order"}
+            </button>
+            <p className="mt-3 text-center text-[13.5px] text-shop-muted">
+              {/pick/i.test(order.fulfillment ?? "")
+                ? settings.pickupNote
+                : settings.preorderNote}
+            </p>
+          </div>
         </section>
       </div>
     );
@@ -2327,7 +3151,7 @@ export default function OrderWizard({
                 : step.type === "details"
                   ? DetailsStep()
                   : step.type === "payment"
-                    ? PaymentStep()
+                    ? PaymentStep(total)
                     : step.key === "fulfillment"
                       ? FulfillmentStep()
                       : TileStep()}

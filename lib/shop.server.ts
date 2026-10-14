@@ -4,6 +4,7 @@ import { createClient } from "@/utils/supabase/server";
 import {
   CATEGORIES,
   type Category,
+  type PremadeDesign,
   type ShopBootstrap,
   type ShopOption,
   type ShopOptions,
@@ -70,15 +71,53 @@ export async function getRawSettings(): Promise<Record<string, string>> {
 /** Everything the wizard needs to boot: open flag, settings, active options. */
 export async function getShopBootstrap(): Promise<ShopBootstrap> {
   const supabase = createClient(await cookies());
-  const [settingsRes, optionsRes] = await Promise.all([
+  const [settingsRes, optionsRes, designsRes] = await Promise.all([
     supabase.from("shop_settings").select("key, value"),
     supabase
       .from("shop_options")
       .select("id, category, value, price, active, note, style, qr, plain, sort")
       .order("sort", { ascending: true }),
+    supabase
+      .from("shop_designs")
+      .select(
+        "id, name, note, merch, bead_name, charm, letter_size, bead_mix, addons, color, image_url, active, sort, set:shop_sets(name, sort)",
+      )
+      .eq("active", true)
+      .order("sort", { ascending: true }),
   ]);
   if (settingsRes.error) throw new Error(settingsRes.error.message);
   if (optionsRes.error) throw new Error(optionsRes.error.message);
+  // a missing shop_designs table (migration not run yet) just means no catalogue
+  const designs: PremadeDesign[] = (designsRes.data ?? [])
+    .map((d) => ({
+      id: d.id as string,
+      name: (d.name as string) ?? "",
+      note: (d.note as string) ?? "",
+      merch: (d.merch as string) || undefined,
+      beadName: (d.bead_name as string) || undefined,
+      design: (d.charm as string) || undefined,
+      size: (d.letter_size as string) || undefined,
+      bead: (d.bead_mix as string) || undefined,
+      addons: Array.isArray(d.addons) ? (d.addons as string[]) : [],
+      color: (d.color as string) || undefined,
+      // the joined set comes back as an object (to-one FK), but the client
+      // types it loosely — accept either shape
+      ...(() => {
+        const rel = (Array.isArray(d.set) ? d.set[0] : d.set) as
+          | { name?: string; sort?: number }
+          | null
+          | undefined;
+        return {
+          setName: rel?.name ?? "",
+          setSort: Number(rel?.sort) || 0,
+        };
+      })(),
+      imageUrl: (d.image_url as string) || null,
+      active: !!d.active,
+      sort: Number(d.sort) || 0,
+    }))
+    // a design without an item has no recipe to price — hide it
+    .filter((d) => !!d.merch);
 
   const s: Record<string, string> = {};
   for (const r of (settingsRes.data ?? []) as SettingRow[]) s[r.key] = r.value;
@@ -102,5 +141,6 @@ export async function getShopBootstrap(): Promise<ShopBootstrap> {
         s.CLOSED_MESSAGE || "Orders are closed right now. Check back soon.",
     },
     options: groupOptions((optionsRes.data ?? []) as OptionRow[]),
+    designs,
   };
 }

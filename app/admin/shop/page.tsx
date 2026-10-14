@@ -4,7 +4,13 @@
 // of the Apps Script version. Each tab here is one step of the order wizard.
 
 import { useEffect, useState } from "react";
-import { CATEGORIES, type Category, type ShopOption } from "@/lib/shop";
+import {
+  CATEGORIES,
+  pieceSubtotalOf,
+  type Category,
+  type ShopOption,
+  type ShopOptions,
+} from "@/lib/shop";
 
 // _key is a stable client-side identity: rows must never be matched by object
 // reference, because every state update replaces the object (a save that set
@@ -15,6 +21,41 @@ type Row = ShopOption & {
   dirty?: boolean;
   saving?: boolean;
 };
+
+/** A pre-made catalogue design, as /api/shop/designs speaks it: a saved
+    recipe over the catalog. Its price is computed, never typed. */
+type DesignRow = {
+  id?: string;
+  name: string;
+  note: string;
+  merch: string;
+  bead_name: string;
+  charm: string;
+  letter_size: string | null;
+  bead_mix: string | null;
+  addons: string[];
+  color: string | null;
+  set_id: string | null;
+  image_url: string | null;
+  active: boolean;
+  sort: number;
+  _key: string;
+  dirty?: boolean;
+  saving?: boolean;
+};
+
+/** A set/category from the managed list (shop_sets). */
+type SetRow = {
+  id?: string;
+  name: string;
+  sort: number;
+  _key: string;
+  dirty?: boolean;
+  saving?: boolean;
+};
+
+/** The shop editor's tabs: the option categories plus the designs catalogue. */
+type Tab = Category | "PREMADE";
 type Setting = {
   key: string;
   value: string;
@@ -48,8 +89,10 @@ function swatches(style: string) {
 }
 
 export default function ShopAdminPage() {
-  const [tab, setTab] = useState<Category>("MERCH");
+  const [tab, setTab] = useState<Tab>("MERCH");
   const [rows, setRows] = useState<Row[]>([]);
+  const [designRows, setDesignRows] = useState<DesignRow[]>([]);
+  const [setList, setSetList] = useState<SetRow[]>([]);
   const [settings, setSettings] = useState<Setting[]>([]);
   const [showSettings, setShowSettings] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -60,10 +103,17 @@ export default function ShopAdminPage() {
   // touches state from promise callbacks — never synchronously in the effect.
   useEffect(() => {
     let cancelled = false;
-    Promise.all([fetch("/api/shop/options"), fetch("/api/shop/settings")])
-      .then(async ([optRes, setRes]) => {
+    Promise.all([
+      fetch("/api/shop/options"),
+      fetch("/api/shop/settings"),
+      fetch("/api/shop/designs"),
+      fetch("/api/shop/sets"),
+    ])
+      .then(async ([optRes, setRes, desRes, setsRes]) => {
         const opts = await optRes.json();
         const sets = await setRes.json();
+        const des = await desRes.json();
+        const setList = await setsRes.json();
         if (!optRes.ok) throw new Error(opts.error || "options failed");
         if (!setRes.ok) throw new Error(sets.error || "settings failed");
         if (cancelled) return;
@@ -74,6 +124,23 @@ export default function ShopAdminPage() {
           })),
         );
         setSettings(sets as Setting[]);
+        // a missing shop_designs table just means the tab starts empty
+        if (desRes.ok && Array.isArray(des)) {
+          setDesignRows(
+            (des as Omit<DesignRow, "_key">[]).map((d) => ({
+              ...d,
+              _key: d.id ?? crypto.randomUUID(),
+            })),
+          );
+        }
+        if (setsRes.ok && Array.isArray(setList)) {
+          setSetList(
+            (setList as Omit<SetRow, "_key">[]).map((s) => ({
+              ...s,
+              _key: s.id ?? crypto.randomUUID(),
+            })),
+          );
+        }
       })
       .catch((e: unknown) => {
         if (cancelled) return;
@@ -140,6 +207,7 @@ export default function ShopAdminPage() {
   }
 
   function addRow() {
+    if (tab === "PREMADE") return; // designs have their own add button
     const maxSort = Math.max(
       0,
       ...rows.filter((r) => r.category === tab).map((r) => r.sort),
@@ -160,6 +228,198 @@ export default function ShopAdminPage() {
         dirty: true,
       },
     ]);
+  }
+
+  /* ---------------- pre-made designs ---------------- */
+
+  function patchDesign(row: DesignRow, patch: Partial<DesignRow>) {
+    setDesignRows((rs) =>
+      rs.map((r) =>
+        r._key === row._key ? { ...r, ...patch, dirty: true } : r,
+      ),
+    );
+  }
+
+  async function saveDesign(row: DesignRow) {
+    setDesignRows((rs) =>
+      rs.map((r) => (r._key === row._key ? { ...r, saving: true } : r)),
+    );
+    try {
+      const res = await fetch("/api/shop/designs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(row),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "save failed");
+      setDesignRows((rs) =>
+        rs.map((r) =>
+          r._key === row._key
+            ? {
+                ...(data as Omit<DesignRow, "_key">),
+                _key: row._key,
+                dirty: false,
+                saving: false,
+              }
+            : r,
+        ),
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save failed.");
+      setDesignRows((rs) =>
+        rs.map((r) => (r._key === row._key ? { ...r, saving: false } : r)),
+      );
+    }
+  }
+
+  async function deleteDesign(row: DesignRow) {
+    if (!row.id) {
+      setDesignRows((rs) => rs.filter((r) => r._key !== row._key));
+      return;
+    }
+    if (!confirm(`Delete "${row.name}"? Unticking Active hides it instead.`))
+      return;
+    const res = await fetch(`/api/shop/designs?id=${row.id}`, {
+      method: "DELETE",
+    });
+    if (res.ok) setDesignRows((rs) => rs.filter((r) => r._key !== row._key));
+    else setError("Delete failed.");
+  }
+
+  function addDesign() {
+    const maxSort = Math.max(0, ...designRows.map((r) => r.sort));
+    setDesignRows((rs) => [
+      ...rs,
+      {
+        name: "",
+        note: "",
+        merch: "",
+        bead_name: "",
+        charm: "",
+        letter_size: null,
+        bead_mix: null,
+        addons: [],
+        color: null,
+        set_id: null,
+        image_url: null,
+        active: true,
+        sort: maxSort + 1,
+        _key: crypto.randomUUID(),
+        dirty: true,
+      },
+    ]);
+  }
+
+  /* ---------------- sets (the managed category list) ---------------- */
+
+  function patchSet(row: SetRow, patch: Partial<SetRow>) {
+    setSetList((rs) =>
+      rs.map((r) => (r._key === row._key ? { ...r, ...patch, dirty: true } : r)),
+    );
+  }
+
+  async function saveSet(row: SetRow) {
+    setSetList((rs) =>
+      rs.map((r) => (r._key === row._key ? { ...r, saving: true } : r)),
+    );
+    try {
+      const res = await fetch("/api/shop/sets", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(row),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "save failed");
+      setSetList((rs) =>
+        rs.map((r) =>
+          r._key === row._key
+            ? { ...(data as Omit<SetRow, "_key">), _key: row._key, dirty: false, saving: false }
+            : r,
+        ),
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save failed.");
+      setSetList((rs) =>
+        rs.map((r) => (r._key === row._key ? { ...r, saving: false } : r)),
+      );
+    }
+  }
+
+  async function deleteSet(row: SetRow) {
+    if (!row.id) {
+      setSetList((rs) => rs.filter((r) => r._key !== row._key));
+      return;
+    }
+    if (
+      !confirm(
+        `Delete the set "${row.name}"? Its designs stay, just ungrouped.`,
+      )
+    )
+      return;
+    const res = await fetch(`/api/shop/sets?id=${row.id}`, { method: "DELETE" });
+    if (res.ok) {
+      setSetList((rs) => rs.filter((r) => r._key !== row._key));
+      setDesignRows((rs) =>
+        rs.map((r) => (r.set_id === row.id ? { ...r, set_id: null } : r)),
+      );
+    } else setError("Delete failed.");
+  }
+
+  /** "+ New set…" in a design's dropdown: name it, save it, use it. */
+  async function createSetFor(designRow: DesignRow) {
+    const name = prompt("Name the new set/category:")?.trim();
+    if (!name) return;
+    try {
+      const res = await fetch("/api/shop/sets", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name, sort: setList.length + 1 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "could not add the set");
+      setSetList((rs) => [
+        ...rs,
+        { ...(data as Omit<SetRow, "_key">), _key: data.id },
+      ]);
+      patchDesign(designRow, { set_id: data.id as string });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not add the set.");
+    }
+  }
+
+  /** The catalog as the wizard sees it, for pricing design recipes live. */
+  function optionsFromRows(): ShopOptions {
+    const g = Object.fromEntries(
+      CATEGORIES.map((c) => [c, [] as ShopOption[]]),
+    ) as ShopOptions;
+    for (const r of rows) g[r.category]?.push(r);
+    return g;
+  }
+
+  /** Active values for a recipe select, keeping a now-inactive current value. */
+  function optionValues(cat: Category, current?: string | null): string[] {
+    const act = rows
+      .filter((r) => r.category === cat && r.active)
+      .map((r) => r.value);
+    return current && !act.includes(current) ? [current, ...act] : act;
+  }
+
+  function designPrice(r: DesignRow): number {
+    const ppl =
+      Number(settings.find((s) => s.key === "PRICE_PER_LETTER")?.value) || 0;
+    return pieceSubtotalOf(
+      optionsFromRows(),
+      {
+        merch: r.merch || undefined,
+        color: r.color || undefined,
+        beadName: r.bead_name || undefined,
+        design: r.charm || undefined,
+        size: r.letter_size || undefined,
+        bead: r.bead_mix || undefined,
+        addons: r.addons,
+      },
+      ppl,
+    );
   }
 
   async function saveSettings() {
@@ -230,6 +490,15 @@ export default function ShopAdminPage() {
                 </button>
               ))}
               <button
+                className={pillCls(!showSettings && tab === "PREMADE")}
+                onClick={() => {
+                  setShowSettings(false);
+                  setTab("PREMADE");
+                }}
+              >
+                🖼️ Pre-made designs
+              </button>
+              <button
                 className={pillCls(showSettings)}
                 onClick={() => setShowSettings(true)}
               >
@@ -288,6 +557,357 @@ export default function ShopAdminPage() {
               onClick={saveSettings}
             >
               {savingSettings ? "Saving…" : "Save settings"}
+            </button>
+          </div>
+        ) : tab === "PREMADE" ? (
+          <div className="bg-white rounded-2xl shadow-sm p-4 space-y-3">
+            <p className="text-xs text-shop-muted">
+              Ready-made pieces customers buy as-is, choosing only a colour
+              (from the 🎨 Colours tab). Build each design like a custom order —
+              the price is worked out from those choices, so it follows your
+              catalog prices automatically.
+            </p>
+
+            {/* the managed set/category list: rename here renames everywhere */}
+            <div className="rounded-xl bg-paper/60 p-3">
+              <div className="mb-1.5 flex items-baseline gap-2">
+                <span className="font-display text-[14px] font-medium">
+                  Sets / categories
+                </span>
+                <span className="text-[11px] text-shop-muted">
+                  The catalogue groups designs by these.
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                {setList.map((s) => (
+                  <div key={s._key} className="flex items-center gap-2">
+                    <input
+                      className={`${inputCls} max-w-56`}
+                      value={s.name}
+                      onChange={(e) => patchSet(s, { name: e.target.value })}
+                    />
+                    <input
+                      className={`${inputCls} w-16`}
+                      type="number"
+                      title="Sort order"
+                      value={s.sort}
+                      onChange={(e) =>
+                        patchSet(s, { sort: Number(e.target.value) || 0 })
+                      }
+                    />
+                    <button
+                      className="cursor-pointer rounded-full bg-shop-pink px-3 py-1 font-display text-xs font-medium text-white disabled:opacity-40"
+                      disabled={!s.dirty || s.saving || !s.name.trim()}
+                      onClick={() => saveSet(s)}
+                    >
+                      {s.saving ? "…" : "Save"}
+                    </button>
+                    <button
+                      className="cursor-pointer text-xs text-[#a31346]"
+                      onClick={() => deleteSet(s)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                ))}
+                {setList.length === 0 && (
+                  <p className="text-xs text-shop-muted">
+                    No sets yet — add one below, or straight from a design&apos;s
+                    Set dropdown.
+                  </p>
+                )}
+                <button
+                  className="cursor-pointer font-display text-xs font-medium text-shop-muted underline"
+                  onClick={() =>
+                    setSetList((rs) => [
+                      ...rs,
+                      {
+                        name: "",
+                        sort: rs.length + 1,
+                        _key: crypto.randomUUID(),
+                        dirty: true,
+                      },
+                    ])
+                  }
+                >
+                  + Add a set
+                </button>
+              </div>
+            </div>
+
+            {designRows.length === 0 && (
+              <div className="text-sm text-shop-muted">
+                No designs yet — the Pre-made card stays hidden on the shop
+                until you add one.
+              </div>
+            )}
+
+            {designRows
+              .slice()
+              .sort((a, b) => a.sort - b.sort)
+              .map((row) => (
+                <div
+                  key={row._key}
+                  className="border border-cord/40 rounded-xl p-3 space-y-2"
+                >
+                  <div className="flex flex-wrap items-end gap-2">
+                    <label className="grow basis-40 min-w-0">
+                      <span className="text-[11px] text-shop-muted">
+                        Design name (shown in the catalogue)
+                      </span>
+                      <input
+                        className={inputCls}
+                        value={row.name}
+                        onChange={(e) =>
+                          patchDesign(row, { name: e.target.value })
+                        }
+                      />
+                    </label>
+                    <label className="grow basis-36 min-w-0">
+                      <span className="text-[11px] text-shop-muted">
+                        Set / category (groups the catalogue)
+                      </span>
+                      <select
+                        className={inputCls}
+                        value={row.set_id ?? ""}
+                        onChange={(e) => {
+                          if (e.target.value === "__new__") {
+                            void createSetFor(row);
+                            return;
+                          }
+                          patchDesign(row, { set_id: e.target.value || null });
+                        }}
+                      >
+                        <option value="">No set</option>
+                        {setList
+                          .filter((s) => s.id)
+                          .map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name}
+                            </option>
+                          ))}
+                        <option value="__new__">＋ New set…</option>
+                      </select>
+                    </label>
+                    <label className="w-20 shrink-0">
+                      <span className="text-[11px] text-shop-muted">Sort</span>
+                      <input
+                        className={inputCls}
+                        type="number"
+                        value={row.sort}
+                        onChange={(e) =>
+                          patchDesign(row, { sort: Number(e.target.value) || 0 })
+                        }
+                      />
+                    </label>
+                  </div>
+
+                  {/* the recipe: the same picks a customer makes in the wizard */}
+                  <div className="flex flex-wrap items-end gap-2">
+                    <label className="grow basis-36 min-w-0">
+                      <span className="text-[11px] text-shop-muted">Item</span>
+                      <select
+                        className={inputCls}
+                        value={row.merch}
+                        onChange={(e) =>
+                          patchDesign(row, { merch: e.target.value })
+                        }
+                      >
+                        <option value="">Pick an item…</option>
+                        {optionValues("MERCH", row.merch).map((v) => (
+                          <option key={v} value={v}>
+                            {v}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="grow basis-36 min-w-0">
+                      <span className="text-[11px] text-shop-muted">Colour</span>
+                      <select
+                        className={inputCls}
+                        value={row.color ?? ""}
+                        onChange={(e) =>
+                          patchDesign(row, { color: e.target.value || null })
+                        }
+                      >
+                        <option value="">Customer picks…</option>
+                        {optionValues("COLOR", row.color).map((v) => (
+                          <option key={v} value={v}>
+                            {v}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="grow basis-36 min-w-0">
+                      <span className="text-[11px] text-shop-muted">
+                        Name on the piece (optional)
+                      </span>
+                      <input
+                        className={inputCls}
+                        value={row.bead_name}
+                        onChange={(e) =>
+                          patchDesign(row, { bead_name: e.target.value })
+                        }
+                      />
+                    </label>
+                    <label className="grow basis-36 min-w-0">
+                      <span className="text-[11px] text-shop-muted">
+                        Main design
+                      </span>
+                      <select
+                        className={inputCls}
+                        value={row.charm}
+                        onChange={(e) =>
+                          patchDesign(row, { charm: e.target.value })
+                        }
+                      >
+                        <option value="">Pick a design…</option>
+                        {optionValues("DESIGN", row.charm).map((v) => (
+                          <option key={v} value={v}>
+                            {v}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {row.bead_name.trim() !== "" && (
+                      <label className="grow basis-36 min-w-0">
+                        <span className="text-[11px] text-shop-muted">
+                          Letter size
+                        </span>
+                        <select
+                          className={inputCls}
+                          value={row.letter_size ?? ""}
+                          onChange={(e) =>
+                            patchDesign(row, {
+                              letter_size: e.target.value || null,
+                            })
+                          }
+                        >
+                          <option value="">Pick a size…</option>
+                          {optionValues("SIZE", row.letter_size).map((v) => (
+                            <option key={v} value={v}>
+                              {v}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                    <label className="grow basis-36 min-w-0">
+                      <span className="text-[11px] text-shop-muted">
+                        Bead mix
+                      </span>
+                      <select
+                        className={inputCls}
+                        value={row.bead_mix ?? ""}
+                        onChange={(e) =>
+                          patchDesign(row, { bead_mix: e.target.value || null })
+                        }
+                      >
+                        <option value="">Pick a mix…</option>
+                        {optionValues("BEAD", row.bead_mix).map((v) => (
+                          <option key={v} value={v}>
+                            {v}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div>
+                    <span className="text-[11px] text-shop-muted">Add-ons</span>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {optionValues("ADDON").map((v) => {
+                        const on = row.addons.includes(v);
+                        return (
+                          <button
+                            key={v}
+                            type="button"
+                            className={`cursor-pointer rounded-full border-2 px-2.5 py-1 text-xs font-semibold ${
+                              on
+                                ? "border-shop-pink bg-shop-pink/10 text-shop-pink"
+                                : "border-cord/60 bg-white text-shop-muted"
+                            }`}
+                            onClick={() =>
+                              patchDesign(row, {
+                                addons: on
+                                  ? row.addons.filter((a) => a !== v)
+                                  : [...row.addons, v],
+                              })
+                            }
+                          >
+                            {v}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <label className="block">
+                    <span className="text-[11px] text-shop-muted">
+                      Description shown to customer
+                    </span>
+                    <input
+                      className={inputCls}
+                      value={row.note}
+                      onChange={(e) => patchDesign(row, { note: e.target.value })}
+                    />
+                  </label>
+
+                  <label className="block">
+                    <span className="text-[11px] text-shop-muted">
+                      Photo URL (optional — replaces the drawn preview)
+                    </span>
+                    <input
+                      className={inputCls}
+                      value={row.image_url ?? ""}
+                      onChange={(e) =>
+                        patchDesign(row, { image_url: e.target.value || null })
+                      }
+                    />
+                  </label>
+
+                  <div className="flex flex-wrap items-center gap-3 justify-end pt-1">
+                    <label className="flex items-center gap-1.5 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={row.active}
+                        onChange={(e) =>
+                          patchDesign(row, { active: e.target.checked })
+                        }
+                      />
+                      Active
+                    </label>
+                    <span
+                      className="text-sm font-bold text-shop-pink tabular-nums"
+                      title="Worked out from the catalog prices, before any colour surcharge"
+                    >
+                      = PHP {designPrice(row).toLocaleString()}
+                    </span>
+                    <span className="mr-auto" />
+                    <button
+                      className="text-sm text-[#a31346]"
+                      onClick={() => deleteDesign(row)}
+                    >
+                      Delete
+                    </button>
+                    <button
+                      className="cursor-pointer rounded-full bg-shop-pink px-4 py-1.5 font-display text-sm font-medium text-white shadow-[0_3px_0_#c93a74] active:translate-y-[2px] active:shadow-[0_1px_0_#c93a74] disabled:opacity-40 disabled:shadow-none"
+                      disabled={
+                        !row.dirty || row.saving || !row.name.trim() || !row.merch
+                      }
+                      onClick={() => saveDesign(row)}
+                    >
+                      {row.saving ? "Saving…" : "Save"}
+                    </button>
+                  </div>
+                </div>
+              ))}
+
+            <button
+              className="cursor-pointer font-display text-sm font-medium text-shop-muted underline"
+              onClick={addDesign}
+            >
+              + Add a design
             </button>
           </div>
         ) : (

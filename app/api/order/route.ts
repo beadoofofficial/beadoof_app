@@ -11,6 +11,7 @@ import {
   pieceSubtotalOf,
   totalOf,
   type PieceSelections,
+  type PremadeDesign,
   type ShopOptions,
   type ShopSettings,
 } from "@/lib/shop";
@@ -42,6 +43,8 @@ type ValidatedPiece = {
   bead: string | null;
   addons: string[];
   plain: boolean;
+  /** Set when the piece is a catalogue design rather than a custom build. */
+  premadeId?: string;
   subtotal: number;
 };
 
@@ -67,9 +70,38 @@ function requireOption(
 function validatePiece(
   options: ShopOptions,
   settings: ShopSettings,
+  designs: PremadeDesign[],
   p: PieceSelections,
   which: string,
 ): ValidatedPiece {
+  // A catalogue piece: the design's saved recipe plus the customer's colour.
+  // The recipe runs through the exact same validation and pricing as a custom
+  // piece, then the catalogue name replaces the base item for display.
+  if (p.premadeId) {
+    const d = designs.find((x) => x.id === p.premadeId && x.active);
+    if (!d) {
+      throw new Error(
+        `That design isn't available any more${which}. Pick another one.`,
+      );
+    }
+    const recipe: PieceSelections = {
+      merch: d.merch,
+      // a colour fixed on the design wins over whatever the client sent
+      color: d.color || p.color,
+      beadName: d.beadName,
+      design: d.design,
+      size: d.size,
+      bead: d.bead,
+      addons: d.addons ?? [],
+    };
+    const validated = validatePiece(options, settings, [], recipe, which);
+    return {
+      ...validated,
+      merch: d.name,
+      premadeId: d.id,
+    };
+  }
+
   const merch = requireOption(options, "MERCH", p.merch, `item${which}`);
   const color = requireOption(options, "COLOR", p.color, `colour${which}`);
   const design = requireOption(options, "DESIGN", p.design, `design${which}`);
@@ -185,6 +217,7 @@ export async function POST(req: Request) {
       validatePiece(
         options,
         settings,
+        boot.designs,
         p,
         rawPieces.length > 1 ? ` on piece ${i + 1}` : "",
       ),
